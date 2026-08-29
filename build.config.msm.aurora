@@ -1,3 +1,0 @@
-################################################################################
-## Inheriting configs from ACK
-. ${ROOT_DIR}/msm-kernel/build.config.msm.pineapple

@@ -46,7 +46,7 @@ def _define_build_config(
     Creates a `kernel_build_config` for input to a `kernel_build` rule.
 
     Args:
-      msm_target: name of target platform (e.g. "shennong")
+      msm_target: name of target platform (e.g. "amethyst")
       msm_arch: architecture of target platform (e.g. "pineapple")
       variant: variant of kernel to build (e.g. "gki")
     """
