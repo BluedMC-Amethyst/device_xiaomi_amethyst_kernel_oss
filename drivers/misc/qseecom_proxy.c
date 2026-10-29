@@ -81,5 +81,25 @@ int qseecom_send_command(struct qseecom_handle *handle, void *send_buf,
 }
 EXPORT_SYMBOL(qseecom_send_command);
 
+int qseecom_process_listener_from_smcinvoke(uint32_t *result,
+	u64 *response_type, unsigned int *data)
+{
+	int32_t ret = -1;
+
+	/* route the smcinvoke listener request to the QSEECom driver */
+	if (qseecom_fun_ops.qseecom_process_listener_from_smcinvoke) {
+		ret = qseecom_fun_ops.qseecom_process_listener_from_smcinvoke(result,
+					response_type, data);
+		if (ret != 0)
+			pr_err("%s: qseecom process listener failed with ret = %d\n",
+				__func__, ret);
+	} else {
+		pr_err_ratelimited("Qseecom driver is not up yet\n");
+		ret = -EAGAIN;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(qseecom_process_listener_from_smcinvoke);
+
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qseecom proxy driver");

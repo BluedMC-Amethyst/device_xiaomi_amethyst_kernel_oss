@@ -42,9 +42,14 @@ struct qseecom_drv_ops {
 	int (*qseecom_start_app)(struct qseecom_handle **handle,
 				char *app_name, uint32_t size);
 	int (*qseecom_shutdown_app)(struct qseecom_handle **handle);
+	int (*qseecom_process_listener_from_smcinvoke)(uint32_t *result,
+				u64 *response_type, unsigned int *data);
 };
 
 int provide_qseecom_kernel_fun_ops(const struct qseecom_drv_ops *ops);
+
+int qseecom_process_listener_from_smcinvoke(uint32_t *result,
+				u64 *response_type, unsigned int *data);
 #endif
 
 #endif /* __QSEECOM_KERNEL_H_ */
