@@ -31,7 +31,10 @@ vendor_dlkm/modules.load)
 esac
 
 mkdir -p "$(dirname "$output")"
-grep -Ev "$exclude" "$input" > "$output"
+# ponytail: isolate the stock UFS firmware updater's delayed emergency-restart
+# paths during bring-up; restore after its compatibility is established.
+# ufs_qcom is the storage driver and must remain enabled.
+grep -Ev -e "$exclude" -e '^ufs_ffu\.ko$' "$input" > "$output"
 
 # Core modules must not be accidentally removed by a first-boot filter.
 for required in ufs_qcom.ko sched-walt.ko qcom-spmi-pmic.ko; do
