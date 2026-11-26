@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Awinic AW882xx smart PA for amethyst. Driver v1.11.01 from Motorola's
+# open-source modules (MotorolaMobilityLLC/motorola-kernel-modules,
+# sound/soc/codecs/aw882xx_dlkm), adapted to MiCode's machine driver.
+# Built without AW_QCOM_PLATFORM, like the stock module: volcano uses
+# AudioReach, not the q6afe/APR interface that option calls.
+aw882xx_dlkm-y := aw882xx.o aw882xx_bin_parse.o aw882xx_calib.o \
+	aw882xx_device.o aw882xx_dsp.o aw882xx_init.o aw882xx_monitor.o \
+	aw882xx_spin.o
+obj-m += aw882xx_dlkm.o

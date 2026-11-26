@@ -1,0 +1,2 @@
+Source: https://github.com/STMicroelectronics/ST54-android-kernel-se-gpio branch st_dev_kernel_5.10 commit f6722b6
+Unmodified except: Android.mk dropped (built by LineageOS kernel.mk).
