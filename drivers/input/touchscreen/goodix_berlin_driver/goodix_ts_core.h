@@ -667,6 +667,8 @@ struct goodix_ts_core {
 	struct device *goodix_touch_dev;
  	/* TODO counld we remove this from core data? */
 	struct goodix_ts_event ts_event;
+	/* panel is the second CSOT source ("hill"), needs goodix_sec_* files */
+	bool sec_panel;
 	unsigned long touch_id;
 	u8 eventsdata;
 

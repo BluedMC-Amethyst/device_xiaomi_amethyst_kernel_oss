@@ -25,6 +25,8 @@
 #include <linux/backlight.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
 #include <linux/debugfs.h>
+#include <linux/of.h>
+#include <drm/drm_panel.h>
 #include <linux/pinctrl/devinfo.h>
 #include <linux/pinctrl/consumer.h>
 
@@ -41,7 +43,9 @@
 #define PINCTRL_STATE_SUSPEND		"pmx_ts_suspend"
 #define PINCTRL_STATE_BOOT			"pmx_ts_boot"
 
-#define HTC_PROJECT_CFG_NAME		"warsaw_gtp_thp_config.ini"
+/* THP config the touch HAL loads from /odm/firmware, per panel source */
+#define GOODIX_THP_CFG_NAME		"o16u_goodix_thp_config_00.ini"
+#define GOODIX_THP_CFG_NAME_SEC		"o16u_goodix_thp_config_01.ini"
 
 #ifdef CONFIG_TOUCH_BOOST
 #define EVENT_INPUT 0x1
@@ -3211,18 +3215,78 @@ static int goodix_send_ic_config(struct goodix_ts_core *cd, int type)
 	return cd->hw_ops->send_config(cd, cfg->data, cfg->len);
 }
 
+/*
+ * Find the name of the active DSI panel. Stock walks the touch node's
+ * "panel" phandles and takes the first one msm_drm has registered. msm_drm
+ * loads after goodix_core, so when no panel is registered yet fall back to the
+ * msm_drm.dsi_display0= argument the bootloader writes to /chosen/bootargs.
+ */
+static void goodix_get_panel_name(struct goodix_ts_core *cd, char *buf, size_t len)
+{
+	struct device_node *np = cd->bus->dev->of_node;
+	struct device_node *chosen, *pnode;
+	const char *bootargs, *p;
+	struct drm_panel *panel;
+	size_t n;
+	int i, count;
+
+	buf[0] = '\0';
+	count = of_count_phandle_with_args(np, "panel", NULL);
+	for (i = 0; i < count; i++) {
+		pnode = of_parse_phandle(np, "panel", i);
+		if (!pnode)
+			continue;
+		panel = of_drm_find_panel(pnode);
+		if (!IS_ERR(panel)) {
+			strscpy(buf, pnode->name, len);
+			of_node_put(pnode);
+			ts_info("drm_panel name: %s", buf);
+			return;
+		}
+		of_node_put(pnode);
+	}
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return;
+	if (!of_property_read_string(chosen, "bootargs", &bootargs)) {
+		p = strstr(bootargs, "msm_drm.dsi_display0=");
+		if (p) {
+			p += strlen("msm_drm.dsi_display0=");
+			n = strcspn(p, ": ");
+			strscpy(buf, p, min(n + 1, len));
+			ts_info("panel from bootargs: %s", buf);
+		}
+	}
+	of_node_put(chosen);
+}
+
+/*
+ * amethyst (O16U) ships a second CSOT panel source, "hill". Stock selects the
+ * goodix_sec_* firmware, config and test limits and THP config 01 for it.
+ */
 static int goodix_match_panel(struct goodix_ts_core *cd)
 {
 	char name_buf[GOODIX_MAX_STR_LABLE_LEN];
+	struct goodix_ts_board_data *bd = &cd->board_data;
 
-	snprintf(name_buf, GOODIX_MAX_STR_LABLE_LEN, "%s.bin", cd->board_data.cfg_bin);
+	goodix_get_panel_name(cd, bd->panel_name, sizeof(bd->panel_name));
+	cd->sec_panel = strstr(bd->panel_name, "hill_dsc_vid") != NULL;
+	if (cd->sec_panel) {
+		ts_info("match csot sec panel, set cfg, bin and limit to sec");
+		strscpy(bd->fw, "goodix_sec_firmware_csot", sizeof(bd->fw));
+		strscpy(bd->cfg_bin, "goodix_sec_cfg_group_csot", sizeof(bd->cfg_bin));
+	}
 
-	strncpy(cd->board_data.cfg_bin_name, name_buf, GOODIX_MAX_STR_LABLE_LEN);
+	snprintf(name_buf, GOODIX_MAX_STR_LABLE_LEN, "%s.bin", bd->cfg_bin);
+	strncpy(bd->cfg_bin_name, name_buf, GOODIX_MAX_STR_LABLE_LEN);
 
-	snprintf(name_buf, GOODIX_MAX_STR_LABLE_LEN, "%s.bin", cd->board_data.fw);
-	strncpy(cd->board_data.fw_name, name_buf, GOODIX_MAX_STR_LABLE_LEN);
+	snprintf(name_buf, GOODIX_MAX_STR_LABLE_LEN, "%s.bin", bd->fw);
+	strncpy(bd->fw_name, name_buf, GOODIX_MAX_STR_LABLE_LEN);
 
-	strncpy(cd->board_data.limit_csv_name, TS_DEFAULT_LIMIT_CSV, GOODIX_MAX_STR_LABLE_LEN);
+	/* Stock firmware ships goodix_{,sec_}test_limits_<sensor_id>.csv */
+	strscpy(bd->limit_csv_name, cd->sec_panel ? "goodix_sec_test_limits" :
+		"goodix_test_limits", GOODIX_MAX_STR_LABLE_LEN);
 
 	return 0;
 }
@@ -4131,6 +4195,9 @@ static int goodix_start_later_init(struct goodix_ts_core *ts_core)
 	struct goodix_ts_core *cd = ts_core;
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 
+	/* firmware, config and limit names depend on the panel source */
+	goodix_match_panel(cd);
+
 	/* step 1: read version */
 	// return 0;
 	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
@@ -4142,7 +4209,6 @@ static int goodix_start_later_init(struct goodix_ts_core *ts_core)
 	ts_err("get version info!!!!!!");
 	/* get ts lockdown info */
 	goodix_ts_get_lockdown_info(cd);
-	goodix_match_panel(cd);
 
 	/* setp 2: get config data from config bin */
 	ret = goodix_get_config_proc(cd);
@@ -4247,7 +4313,9 @@ upgrade:
 	hardware_param.raw_data_buf_size = 5;
 	hardware_param.temp_change_value = 2;
 	memset(hardware_param.config_file_name, 0, 64);
-	memcpy(hardware_param.config_file_name, HTC_PROJECT_CFG_NAME, strlen(HTC_PROJECT_CFG_NAME));
+	strscpy(hardware_param.config_file_name, cd->sec_panel ?
+		GOODIX_THP_CFG_NAME_SEC : GOODIX_THP_CFG_NAME,
+		sizeof(hardware_param.config_file_name));
 	memset(hardware_param.driver_version, 0, 64);
 	memcpy(hardware_param.driver_version, GOODIX_DRIVER_VERSION, strlen(GOODIX_DRIVER_VERSION));
 	goodix_lockdown_info_read(hardware_param.lockdown_info);
