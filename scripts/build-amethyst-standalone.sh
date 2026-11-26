@@ -28,11 +28,19 @@ if [[ -n ${HOST_SYSROOT:-} ]]; then
                 "HOSTLDFLAGS=-L$host_root/usr/lib/x86_64-linux-gnu")
 fi
 
-make -C "$kernel" "${make_args[@]}" gki_defconfig
-"$kernel/scripts/kconfig/merge_config.sh" -m -O "$out" \
-    "$kernel/arch/arm64/configs/gki_defconfig" \
-    "$kernel/arch/arm64/configs/vendor/pineapple_GKI.config" \
+fragments=(
+    "$kernel/arch/arm64/configs/gki_defconfig"
+    "$kernel/arch/arm64/configs/vendor/pineapple_GKI.config"
     "$kernel/arch/arm64/configs/vendor/amethyst_GKI.config"
+    "$kernel/arch/arm64/configs/vendor/amethyst_standalone.config"
+)
+# FIRSTBOOT=1 adds diagnostics for the first device boot.
+if [[ ${FIRSTBOOT:-0} == 1 ]]; then
+    fragments+=("$kernel/arch/arm64/configs/vendor/amethyst_firstboot.config")
+fi
+
+make -C "$kernel" "${make_args[@]}" gki_defconfig
+"$kernel/scripts/kconfig/merge_config.sh" -m -O "$out" "${fragments[@]}"
 make -C "$kernel" "${make_args[@]}" olddefconfig
 
 if [[ $# -eq 0 ]]; then
