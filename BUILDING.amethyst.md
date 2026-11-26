@@ -25,6 +25,99 @@ tooling during configuration and reported much broader mismatches; install
 the dependencies before configuring. No boot image has been packaged or
 tested on a phone.
 
+## Stock-module boot compatibility (2026-11-26 audit)
+
+Checked against the stock OS3.0.306.0 module set in the ROM's
+`device/xiaomi/amethyst-kernel` without building:
+
+- Every vmlinux import of the 666 stock modules matches the CRC in
+  `android/abi_gki_aarch64.stg`. `gki_defconfig` is byte-identical to ACK
+  `5b80c8852557` (`android/ACK_SHA`). The stock modules agree with each other.
+- Four kernel symbols they import were missing from this source:
+  `android_vh_filemap_map_pages` (`io_monitor.ko`, in vendor_boot) and
+  `read_swap_cache_async`, `vm_normal_page`, `walk_page_range` (`lb.ko`).
+  First-stage init calls `LOG(FATAL)` if any vendor_boot module fails to load,
+  so `io_monitor.ko` alone stopped boot. The hook and exports are restored
+  with ACK's prototypes. The `filemap_read` and `filemap_map_pages_range`
+  hooks were exported but never called; their ACK call sites are restored.
+- Excluding a module from `modules.load` does not stop modprobe from loading it
+  as a dependency. `sched-walt.ko` needs `metis.ko` and `mist.ko`, and
+  `qcom-spmi-pmic.ko` needs `mi_power.ko`. The first-boot filter now refuses
+  such exclusions.
+- Stock `system_dlkm` modules are signed by the stock GKI build key, which
+  this kernel does not trust. Unsigned copies may not export GKI protected
+  symbols, so `rfkill`, `bluetooth` and `libarc4` fail, followed by
+  `cfg80211`, `mac80211` and `btpower`. The standalone build now re-enables
+  `CONFIG_MODULE_SIG_ALL` (`amethyst_standalone.config`).
+  `scripts/amethyst-stage-system-dlkm.sh <out> <dest>` stages the signed GKI
+  modules from a build. Point the device tree's `GKI_VERSION` at that release.
+
+### First device test
+
+```sh
+FIRSTBOOT=1 bash scripts/build-amethyst-standalone.sh
+python3 scripts/amethyst-preflight-modules.py \
+    ~/AndroidBuilds/EvolutionX/device/xiaomi/amethyst-kernel/modules ../out/amethyst-standalone
+bash scripts/amethyst-make-test-boot.sh \
+    ~/AndroidBuilds/EvolutionX/out/target/product/amethyst/boot.img \
+    ../out/amethyst-standalone/arch/arm64/boot/Image ../out/amethyst-test-boot.img
+fastboot boot amethyst-test-boot.img   # RAM only
+```
+
+- `FIRSTBOOT=1` adds `amethyst_firstboot.config` (`CONFIG_CFI_PERMISSIVE`), so
+  a kCFI mismatch in a Xiaomi module is logged instead of panicking.
+- The preflight repeats the kernel's module load checks offline (vermagic,
+  `struct module` size, missing symbols, CRCs, duplicate exports, GKI
+  protected symbols) for everything first-stage and second-stage init will
+  load, dependencies included. Do not boot with any `vendor_boot` error.
+  With stock `system_dlkm` it reports protected-export errors (Wi-Fi/BT); pass
+  `--system-dlkm <staged release dir>` to check the signed replacement.
+- The test image is the working `boot.img` with only the kernel swapped, plus
+  `loglevel=8 printk.devkmsg=on androidboot.selinux=permissive` (override with
+  `CMDLINE=`). After a hang, force a reboot to recovery and read
+  `/sys/fs/pstore/console-ramoops-0`: the DT reserves ramoops and
+  `PANIC_TIMEOUT=-1` reboots at once.
+
+## LineageOS 24 build, all modules from source (2026-11-27)
+
+The kernel, the in-tree GKI/vendor modules and every external vendor module
+that has source are built by LineageOS's `kernel.mk`. Only the DTB and DTBO
+stay stock: the OSS device trees lack amethyst's amp, haptics and USB nodes.
+
+1. Sync LineageOS (`lineage-24.0`) with the amethyst local manifests plus a
+   manifest that adds the module and DT sources (MiCode `flourite-v-oss`
+   audio-kernel, display-drivers, camera-kernel and wlan into
+   `kernel/xiaomi/sm7635-modules/qcom/opensource`; LineageOS FP6
+   `android_kernel_fairphone_sm7635-modules` (lineage-23.2) at
+   `kernel/xiaomi/amethyst-qcom-modules`, linked into the same root).
+2. `scripts/amethyst-los-setup.sh <los>`: copies this tree to
+   `kernel/xiaomi/amethyst`, installs clang r487747c, links
+   `techpack/amethyst/*` and applies `scripts/amethyst-patches/los`.
+3. Optional fast check without a ROM build:
+   `scripts/amethyst-los-kernel-build.sh <los>` (stages: config kernel modules
+   ext, `ext=<m>`, `ext@<m>`).
+4. `device/xiaomi/amethyst`: `TARGET_KERNEL_SOURCE := kernel/xiaomi/amethyst`,
+   `TARGET_KERNEL_EXT_MODULES` from `scripts/amethyst-ext-modules.txt`, and
+   module lists in `modules/` (the stock load order minus modules without
+   source).
+5. `breakfast amethyst userdebug && m bacon`.
+
+Modules ported in `techpack/amethyst`:
+- `aw882xx`: Awinic smart PA, Motorola's open v1.11.01 driver with Xiaomi's
+  smart-PA hooks (`check_smartpa_type`/`set_smartpa_type`/`set_smartpa_codec`)
+  and the `spksw-gpio` switch. Built without DSP messaging: the speaker
+  algorithm runs on the ADSP (AudioReach).
+- `st-nfc` / `st-ese`: STMicroelectronics' official ST21NFC I2C and ST54 eSE
+  GPIO drivers (module names `stm_nfc_i2c`, `stm_st54se_gpio` match stock).
+
+Dropped because no source is published: Xiaomi's mi_*, millet_*, migt, metis,
+miev, mist, minet, miwill, miicmpfilter, perf_helper, proc_exit, sla, swinfo,
+bootinfo, debug_ext, io_monitor, hardwareinfo, binder_gki, binder_prio,
+ufs_ffu, lb, plus parts amethyst's DT does not describe (cs35l41/43, fs19xx,
+sia91xx, tef668x, tlv320aic3x, nxp-nci). `focaltech_touch` is also dropped,
+but the DT has a Focaltech node for an alternate panel: phones with that
+panel will have no touchscreen.
+
 ## Reproduce the standalone build
 
 On an Ubuntu/Debian build host, install the usual kernel build dependencies:
