@@ -12,13 +12,27 @@ enum hw_country_version {
 };
 
 enum hw_project_version {
-	HARDWARE_PROJECT_N18 = 7,
-	HARDWARE_PROJECT_N16T = 8,
-	HARDWARE_PROJECT_N9 = 9,
-	HARDWARE_PROJECT_O81 = 10,
-	HARDWARE_PROJECT_O82 = 11,
-	HARDWARE_PROJECT_O16U = 12,
+	/*
+	 * Amethyst is O16U. The other projects only select code paths for
+	 * other phones in MiCode's shared drivers (cnss2, icnss2, usbss).
+	 * Values 1-11 are from Xiaomi's SM8650 drivers/misc/hwid/hwid.h.
+	 */
+	HARDWARE_PROJECT_N1 = 1,	/* aurora */
+	HARDWARE_PROJECT_N2 = 2,	/* shennong */
+	HARDWARE_PROJECT_N3 = 3,	/* houji */
+	HARDWARE_PROJECT_N8 = 4,	/* ruyi */
+	HARDWARE_PROJECT_N11U = 5,	/* manet */
+	/* Stock amethyst kernel value; differs from SM8650 (6). */
+	HARDWARE_PROJECT_N18 = 7,	/* goku */
+	HARDWARE_PROJECT_O11 = 7,	/* zorn */
+	HARDWARE_PROJECT_N16T = 8,	/* peridot */
+	HARDWARE_PROJECT_N9 = 9,	/* chenfeng */
+	HARDWARE_PROJECT_O81 = 10,	/* muyu */
+	HARDWARE_PROJECT_O82 = 11,	/* uke */
+	HARDWARE_PROJECT_O16U = 12,	/* amethyst */
 	HARDWARE_PROJECT_P16U = 14,
+	/* Value unpublished; never reported by Amethyst's hwid. */
+	HARDWARE_PROJECT_N801 = 0x7fffffff,
 };
 
 const char *product_name_get(void);
