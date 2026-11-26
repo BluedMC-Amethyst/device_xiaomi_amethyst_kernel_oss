@@ -1,0 +1,13 @@
+diff --git a/Kbuild b/Kbuild
+index b6d5f1f..60939c4 100755
+--- a/Kbuild
++++ b/Kbuild
+@@ -355,6 +355,8 @@ cameramsger-y := \
+         drivers/cam_msger/cam_pid.o   \
+         drivers/cam_msger/cam_binder.o \
+         drivers/cam_msger/cam_msger_common.o
++# snd_message() keeps a 2 KiB m_item on the stack; Xiaomi's build allowed it.
++CFLAGS_drivers/cam_msger/cam_msger.o += -Wframe-larger-than=4096
+         
+ obj-m+= cameramsger.o
+ BOARD_VENDOR_KERNEL_MODULES +=  $(KERNEL_MODULES_OUT)/cameramsger.ko
