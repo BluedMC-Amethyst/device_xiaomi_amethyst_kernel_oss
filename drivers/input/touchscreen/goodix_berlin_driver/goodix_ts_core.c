@@ -27,6 +27,9 @@
 #include <linux/debugfs.h>
 #include <linux/pinctrl/devinfo.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
+#include <linux/of.h>
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 38)
 #include <linux/input/mt.h>
@@ -4549,26 +4552,68 @@ static struct platform_driver goodix_ts_driver = {
 	.id_table = ts_core_ids,
 };
 
-//#define PANEL_ID_DET1 (344+139)
-//#define PANEL_ID_DET2 (344+140)
+/*
+ * amethyst: panel/controller selection, as in stock.
+ *
+ * Goodix (CSOT panel) and FocalTech (TianMa panel) share one DT node with
+ * compatible "xiaomi,touch-spi". The panel-ID pins TLMM 139/140 read
+ * [1,0] for CSOT + Goodix 9916R and [0,1] for TianMa + FocalTech FT3683G.
+ * On [0,1] this driver stays inert so focaltech_touch can bind; stock used
+ * fixed legacy numbers 344+139/344+140, here the TLMM chip is looked up.
+ * If the pins can't be read, register anyway: the CSOT panel is the
+ * default supply. focaltech_touch makes the inverse decision.
+ */
+#define GOODIX_TLMM_COMPATIBLE	"qcom,volcano-pinctrl"
+#define GOODIX_PANEL_ID_PIN1	139
+#define GOODIX_PANEL_ID_PIN2	140
+
+static bool goodix_ts_registered;
+
+static int goodix_match_tlmm(struct gpio_chip *gc, void *data)
+{
+	return gc->parent && gc->parent->of_node &&
+	       of_device_is_compatible(gc->parent->of_node, GOODIX_TLMM_COMPATIBLE);
+}
+
+static int goodix_read_panel_id_pin(int base, int pin)
+{
+	struct gpio_desc *desc = gpio_to_desc(base + pin);
+	int ret;
+
+	if (!desc)
+		return -ENODEV;
+	/* Not requested, as in stock: the pins belong to no driver. */
+	ret = gpiod_direction_input(desc);
+	if (ret)
+		return ret;
+	return gpiod_get_raw_value(desc);
+}
+
+static bool goodix_panel_is_tianma_focal(void)
+{
+	struct gpio_chip *gc;
+	int id1, id2;
+
+	gc = gpiochip_find(NULL, goodix_match_tlmm);
+	if (!gc) {
+		ts_err("TLMM (%s) not found, assuming CSOT panel",
+		       GOODIX_TLMM_COMPATIBLE);
+		return false;
+	}
+	id1 = goodix_read_panel_id_pin(gc->base, GOODIX_PANEL_ID_PIN1);
+	id2 = goodix_read_panel_id_pin(gc->base, GOODIX_PANEL_ID_PIN2);
+	ts_info("gpio_139 = %d, gpio_140 = %d (tlmm base %d)", id1, id2, gc->base);
+	return id1 == 0 && id2 == 1;
+}
+
 static int __init goodix_ts_core_init(void)
 {
 	int ret;
-	//int gpio_139 = 0;
-	//int gpio_140 = 0;
 
-	//gpio_direction_input(PANEL_ID_DET1);
-	//gpio_139 = gpio_get_value(PANEL_ID_DET1);
-	//gpio_direction_input(PANEL_ID_DET2);
-	//gpio_140 = gpio_get_value(PANEL_ID_DET2);
-	//ts_info("gpio_139 = %d, gpio_140 = %d", gpio_139, gpio_140);
-	// [gpio_139,gpio_140] = [1,0] is 1st csot & goodix9916r
-	// [gpio_139,gpio_140] = [0,1] is 2rd tianma & focal3683
-	// default panel select 1st supply
-	//if (gpio_139 == 0 && gpio_140 == 1) {
-	//	ts_info("panel is tianma, ic is focal, return");
-	//	return 0;
-	//}
+	if (goodix_panel_is_tianma_focal()) {
+		ts_info("panel is tianma, ic is focal, return");
+		return 0;
+	}
 	ts_info("Core layer init:%s", GOODIX_DRIVER_VERSION);
 #ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI
 	ret = goodix_spi_bus_init();
@@ -4579,12 +4624,24 @@ static int __init goodix_ts_core_init(void)
 		ts_err("failed add bus driver");
 		return ret;
 	}
-	return platform_driver_register(&goodix_ts_driver);
+	ret = platform_driver_register(&goodix_ts_driver);
+	if (ret) {
+#ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI
+		goodix_spi_bus_exit();
+#else
+		goodix_i2c_bus_exit();
+#endif
+		return ret;
+	}
+	goodix_ts_registered = true;
+	return 0;
 }
 
 static void __exit goodix_ts_core_exit(void)
 {
 	ts_info("Core layer exit");
+	if (!goodix_ts_registered)
+		return;
 	platform_driver_unregister(&goodix_ts_driver);
 #ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI
 	goodix_spi_bus_exit();
