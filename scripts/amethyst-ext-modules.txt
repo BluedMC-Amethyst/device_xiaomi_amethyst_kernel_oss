@@ -16,6 +16,8 @@ qcom/opensource/mmrm-driver
 qcom/opensource/securemsm-kernel
 qcom/opensource/synx-kernel
 qcom/opensource/wlan/platform
+xiaomi/miev
+xiaomi/swinfo
 
 # Users
 qcom/opensource/audio-kernel
@@ -37,3 +39,5 @@ qcom/opensource/video-driver
 qcom/opensource/wlan/qcacld-3.0/.qca6750
 xiaomi/st-ese
 xiaomi/st-nfc
+xiaomi/focaltech_touch
+xiaomi/mi_thermal_interface
