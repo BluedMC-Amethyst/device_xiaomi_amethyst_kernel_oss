@@ -46,6 +46,14 @@ extern int set_smartpa_type(const char *name, unsigned int size);
 extern void set_smartpa_codec(struct device *dev, const char *dai_name);
 #define AW882XX_SMARTPA_NAME "aw882xx"
 
+/*
+ * amethyst: FourSemi FS19xx driver linked into this module (fs19xx/), as in
+ * the stock aw882xx_dlkm. It takes over the i2c client when the chip is an
+ * FS1945 or when the FourSemi type is already latched.
+ */
+extern int exfsm_i2c_probe(struct i2c_client *i2c);
+extern void exfsm_i2c_remove(struct i2c_client *i2c);
+
 #define AW882XX_DRIVER_VERSION "v1.11.01"
 #define AW882XX_I2C_NAME "aw882xx_smartpa"
 
@@ -2049,21 +2057,35 @@ int aw882xx_hw_reset(struct aw882xx *aw882xx)
 /*
  * Amethyst is second-sourced: the "awinic,aw882xx_smartpa" nodes at 0x34/0x35
  * can carry a FourSemi FS1945 instead (device ID 0x2900 in register 0x03).
- * Stock aw882xx_dlkm bundles FourSemi's driver and hands such a chip to
- * exfsm_i2c_probe(). That code is not available as source, so this build
- * only identifies the chip and refuses it.
+ * Like stock, an unrecognised part is checked for that ID after the Awinic
+ * ID read gives up, and an FS1945 is handed to the FourSemi driver.
  */
 #define AW_FS19XX_ID_REG	(0x03)
 #define AW_FS1945_DEVICE_ID	(0x2900)
 
-static bool aw882xx_is_fs1945(struct aw882xx *aw882xx)
+static int aw882xx_fs19xx_read_chipid(struct aw882xx *aw882xx)
 {
+	int ret;
+	unsigned int cnt = 0;
 	unsigned int reg_value = 0;
 
-	if (aw882xx_i2c_read(aw882xx, AW_FS19XX_ID_REG, &reg_value) < 0)
-		return false;
+	while (cnt < AW_READ_CHIPID_RETRIES) {
+		ret = aw882xx_i2c_read(aw882xx, AW_FS19XX_ID_REG, &reg_value);
+		if (ret < 0) {
+			aw_dev_err(aw882xx->dev, "failed to read FS REG_ID: %d", ret);
+			return -EIO;
+		}
+		if (reg_value == AW_FS1945_DEVICE_ID) {
+			aw_dev_info(aw882xx->dev, "fs1945 detected");
+			return 0;
+		}
+		aw_dev_info(aw882xx->dev, "unsupported device revision (0x%x)",
+				reg_value);
+		cnt++;
+		msleep(AW_READ_CHIPID_RETRY_DELAY);
+	}
 
-	return reg_value == AW_FS1945_DEVICE_ID;
+	return -EINVAL;
 }
 
 static int aw882xx_read_chipid(struct aw882xx *aw882xx)
@@ -2076,8 +2098,6 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 		ret = aw882xx_i2c_read(aw882xx, AW882XX_CHIP_ID_REG, &reg_value);
 		if (ret < 0) {
 			aw_dev_err(aw882xx->dev, "failed to read REG_ID: %d", ret);
-			if (aw882xx_is_fs1945(aw882xx))
-				goto fs1945;
 			return -EIO;
 		}
 		switch (reg_value) {
@@ -2114,8 +2134,6 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 		default:
 			aw_dev_info(aw882xx->dev, "unsupported device revision (0x%x)",
 							reg_value);
-			if (aw882xx_is_fs1945(aw882xx))
-				goto fs1945;
 			break;
 		}
 		cnt++;
@@ -2124,11 +2142,6 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 	}
 
 	return -EINVAL;
-
-fs1945:
-	aw_dev_err(aw882xx->dev,
-		"FourSemi FS1945 detected: not supported by this build (stock drives it through FourSemi code bundled in aw882xx_dlkm)");
-	return -ENODEV;
 }
 
 static irqreturn_t aw882xx_irq(int irq, void *data)
@@ -2640,18 +2653,30 @@ static int aw882xx_i2c_probe(struct i2c_client *i2c,
 	int ret;
 	struct aw882xx *aw882xx = NULL;
 	struct device_node *np = i2c->dev.of_node;
+	void *aw_res;
 
 	aw_pr_info("enter addr=0x%x", i2c->addr);
 
 	if (!check_smartpa_type(AW882XX_SMARTPA_NAME)) {
+		/* stock: the FourSemi driver owns the speakers on this unit */
 		aw_dev_info(&i2c->dev, "other smartpa type already set");
-		return -ENODEV;
+		return exfsm_i2c_probe(i2c);
 	}
 
 	if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_I2C)) {
 		aw_dev_err(&i2c->dev, "check_functionality failed");
 		return -EIO;
 	}
+
+	/*
+	 * Everything the Awinic side claims until the chip is identified (its
+	 * state and the rst/int/spksw GPIOs) goes into one devres group, so it
+	 * can all be released before an FS1945 is handed over. Stock frees
+	 * the GPIOs with gpio_free() although they are devm-managed.
+	 */
+	aw_res = devres_open_group(&i2c->dev, NULL, GFP_KERNEL);
+	if (!aw_res)
+		return -ENOMEM;
 
 	/*dev free all auto free*/
 	aw882xx = aw882xx_malloc_init(i2c);
@@ -2678,9 +2703,23 @@ static int aw882xx_i2c_probe(struct i2c_client *i2c,
 
 	/* aw882xx chip id */
 	ret = aw882xx_read_chipid(aw882xx);
+	if (ret < 0 && aw882xx_fs19xx_read_chipid(aw882xx) == 0) {
+		/*
+		 * FourSemi FS1945 (stock: same check, same order). Put the part
+		 * in reset, give back the Awinic state and GPIOs, and let the
+		 * FourSemi driver probe the client from scratch: it claims the
+		 * reset/spksw lines itself and pulses reset before talking to
+		 * the chip.
+		 */
+		if (gpio_is_valid(aw882xx->reset_gpio))
+			gpio_set_value_cansleep(aw882xx->reset_gpio, 0);
+		i2c_set_clientdata(i2c, NULL);
+		devres_release_group(&i2c->dev, aw_res);
+		return exfsm_i2c_probe(i2c);
+	}
 	if (ret < 0) {
 		aw_dev_err(&i2c->dev, "aw882xx_read_chipid failed ret=%d", ret);
-		/* leave the part in reset, as stock does before handing it on */
+		/* not a supported Awinic or FourSemi part: leave it in reset */
 		if (gpio_is_valid(aw882xx->reset_gpio))
 			gpio_set_value_cansleep(aw882xx->reset_gpio, 0);
 
@@ -2691,6 +2730,9 @@ static int aw882xx_i2c_probe(struct i2c_client *i2c,
 
 		return ret;
 	}
+
+	/* an Awinic part: keep what the group holds, drop only the group */
+	devres_remove_group(&i2c->dev, aw_res);
 
 	set_smartpa_type(AW882XX_SMARTPA_NAME, strlen(AW882XX_SMARTPA_NAME));
 
@@ -2747,6 +2789,15 @@ static void aw882xx_i2c_remove(struct i2c_client *i2c)
 {
 	struct aw882xx *aw882xx = i2c_get_clientdata(i2c);
 
+	/* a client bound through exfsm_i2c_probe() belongs to FourSemi */
+	if (!check_smartpa_type(AW882XX_SMARTPA_NAME)) {
+		exfsm_i2c_remove(i2c);
+		return;
+	}
+	/* FS1945 handed over while Awinic was latched: nothing was probed */
+	if (aw882xx == NULL)
+		return;
+
 	aw_dev_info(aw882xx->dev, "enter");
 
 	/*rm irq*/
@@ -2782,6 +2833,14 @@ static void aw882xx_i2c_remove(struct i2c_client *i2c)
 static void aw882xx_i2c_shutdown(struct i2c_client *i2c)
 {
 	struct aw882xx *aw882xx = i2c_get_clientdata(i2c);
+
+	/*
+	 * FourSemi-owned client (clientdata is an fsm_dev or NULL): stock has
+	 * no shutdown handling for it either (it returns when no Awinic
+	 * device was counted).
+	 */
+	if (aw882xx == NULL || !check_smartpa_type(AW882XX_SMARTPA_NAME))
+		return;
 
 	aw_dev_info(aw882xx->dev, "enter");
 	mutex_lock(&aw882xx->lock);
