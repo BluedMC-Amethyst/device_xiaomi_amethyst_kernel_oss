@@ -167,7 +167,12 @@ int aw_cali_write_re_to_nvram(int32_t cali_re, int32_t channel)
 	}
 	return aw_cali_write_cali_re_to_file(cali_re, channel);
 #else
-	return 0;
+	/*
+	 * Not implemented: on amethyst the calibrated Re lives in
+	 * /mnt/vendor/persist/factory/audio/aw_cali.bin and is handled by
+	 * PAL/libawcal. Stock returns success here without storing anything.
+	 */
+	return -EOPNOTSUPP;
 #endif
 }
 
@@ -181,7 +186,8 @@ int aw882xx_cali_read_re_from_nvram(int32_t *cali_re, int32_t channel)
 	}
 	return aw_cali_get_read_cali_re(cali_re, channel);
 #else
-	return 0;
+	/* see aw_cali_write_re_to_nvram(): no kernel-side Re store */
+	return -EOPNOTSUPP;
 #endif
 }
 

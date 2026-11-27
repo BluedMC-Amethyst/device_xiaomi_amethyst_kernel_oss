@@ -811,110 +811,153 @@ static int aw882xx_spksw_gpio_put(struct snd_kcontrol *kcontrol,
 	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
 	int level = !!ucontrol->value.integer.value[0];
 
+	/* stock writes the GPIO unconditionally; refuse when there is none */
 	if (!gpio_is_valid(aw882xx->spksw_gpio))
-		return -EINVAL;
+		return -ENODEV;
 	gpio_set_value_cansleep(aw882xx->spksw_gpio, level);
 	aw882xx->spksw_level = level;
 	return 0;
 }
 
-static const struct snd_kcontrol_new aw882xx_spksw_control[] = {
-	SOC_SINGLE_EXT("aw882xx_spk_sw_gpio_switch", SND_SOC_NOPM, 0, 1, 0,
-		aw882xx_spksw_gpio_get, aw882xx_spksw_gpio_put),
-};
+static int aw882xx_volume_info(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_info *uinfo)
+{
+	aw_snd_soc_codec_t *codec = aw_componet_codec_ops.kcontrol_codec(kcontrol);
+	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
+
+	/* attenuation in 0.125 dB steps, 0 .. mute volume (stock range) */
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = aw882xx->aw_pa->volume_desc.mute_volume;
+	return 0;
+}
+
+static int aw882xx_volume_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	aw_snd_soc_codec_t *codec = aw_componet_codec_ops.kcontrol_codec(kcontrol);
+	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = aw882xx->aw_pa->volume_desc.ctl_volume;
+	return 0;
+}
+
+static int aw882xx_volume_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	aw_snd_soc_codec_t *codec = aw_componet_codec_ops.kcontrol_codec(kcontrol);
+	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
+	struct aw_volume_desc *desc = &aw882xx->aw_pa->volume_desc;
+	long value = ucontrol->value.integer.value[0];
+
+	if (value < 0 || value > desc->mute_volume) {
+		aw_dev_err(aw882xx->dev, "value over range");
+		return -EINVAL;
+	}
+
+	if (value == desc->ctl_volume)
+		return 0;
+
+	mutex_lock(&aw882xx->lock);
+	desc->ctl_volume = value;
+	/* the monitor attenuation still wins when it is larger */
+	aw882xx_dev_apply_volume(aw882xx->aw_pa);
+	mutex_unlock(&aw882xx->lock);
+	return 1;
+}
+
+static int aw882xx_hal_monitor_work_info(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = INT_MIN;
+	uinfo->value.integer.max = 0;
+	return 0;
+}
+
+static int aw882xx_hal_monitor_work_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	aw_snd_soc_codec_t *codec = aw_componet_codec_ops.kcontrol_codec(kcontrol);
+	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
+	uint32_t vmax = 0;
+
+	mutex_lock(&aw882xx->lock);
+	aw882xx_dev_monitor_hal_work(aw882xx->aw_pa, &vmax);
+	mutex_unlock(&aw882xx->lock);
+
+	/* stock reports the raw 32-bit vmax (0xffffffff: no cycle ran) */
+	ucontrol->value.integer.value[0] = vmax;
+	aw_dev_dbg(aw882xx->dev, "vmax is 0x%x", vmax);
+	return 0;
+}
+
+static int aw882xx_hal_get_monitor_time(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	aw_snd_soc_codec_t *codec = aw_componet_codec_ops.kcontrol_codec(kcontrol);
+	struct aw882xx *aw882xx = aw_componet_codec_ops.codec_get_drvdata(codec);
+	uint32_t time = 0;
+
+	aw882xx_dev_monitor_hal_get_time(aw882xx->aw_pa, &time);
+	ucontrol->value.integer.value[0] = time;
+	return 0;
+}
+
+#define AW_DEV_KCTL_NUM	(5)
 
 static int aw882xx_dynamic_create_controls(struct aw882xx *aw882xx)
 {
-	struct snd_kcontrol_new *aw882xx_dev_control = NULL;
+	struct snd_kcontrol_new *ctl = NULL;
+	static const char * const fmt[AW_DEV_KCTL_NUM] = {
+		"aw_dev_%u_prof", "aw_dev_%u_switch", "aw_dev_%u_monitor",
+		"aw_dev_%u_volume", "aw_dev_%u_hal_mon_work",
+	};
 	char *kctl_name = NULL;
+	int i;
 
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-	aw882xx_dev_control = devm_kzalloc(aw882xx->codec->dev, sizeof(struct snd_kcontrol_new) * 5, GFP_KERNEL);
-#else
-	aw882xx_dev_control = devm_kzalloc(aw882xx->codec->dev, sizeof(struct snd_kcontrol_new) * 3, GFP_KERNEL);
-#endif
-
-	if (aw882xx_dev_control == NULL) {
+	ctl = devm_kcalloc(aw882xx->codec->dev, AW_DEV_KCTL_NUM,
+				sizeof(*ctl), GFP_KERNEL);
+	if (ctl == NULL) {
 		aw_dev_err(aw882xx->codec->dev, "kcontrol malloc failed!");
 		return -ENOMEM;
 	}
 
-	kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
-	if (!kctl_name)
-		return -ENOMEM;
+	/* stock names the per-amp controls by DT sound-channel, not probe order */
+	for (i = 0; i < AW_DEV_KCTL_NUM; i++) {
+		kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
+		if (!kctl_name)
+			return -ENOMEM;
+		snprintf(kctl_name, AW_NAME_BUF_MAX, fmt[i], aw882xx->aw_pa->channel);
+		ctl[i].name = kctl_name;
+		ctl[i].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
+	}
 
-	snprintf(kctl_name, AW_NAME_BUF_MAX, "aw_dev_%d_prof", aw882xx->index);
+	ctl[0].info = aw882xx_profile_info;
+	ctl[0].get = aw882xx_profile_get;
+	ctl[0].put = aw882xx_profile_set;
 
-	aw882xx_dev_control[0].name = kctl_name;
-	aw882xx_dev_control[0].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-	aw882xx_dev_control[0].info = aw882xx_profile_info;
-	aw882xx_dev_control[0].get = aw882xx_profile_get;
-	aw882xx_dev_control[0].put = aw882xx_profile_set;
+	ctl[1].info = aw882xx_switch_info;
+	ctl[1].get = aw882xx_switch_get;
+	ctl[1].put = aw882xx_switch_set;
 
-	kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
-	if (!kctl_name)
-		return -ENOMEM;
+	ctl[2].info = aw882xx_monitor_info;
+	ctl[2].get = aw882xx_monitor_get;
+	ctl[2].put = aw882xx_monitor_set;
 
-	snprintf(kctl_name, AW_NAME_BUF_MAX, "aw_dev_%d_switch", aw882xx->index);
+	ctl[3].info = aw882xx_volume_info;
+	ctl[3].get = aw882xx_volume_get;
+	ctl[3].put = aw882xx_volume_put;
 
-	aw882xx_dev_control[1].name = kctl_name;
-	aw882xx_dev_control[1].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-	aw882xx_dev_control[1].info = aw882xx_switch_info;
-	aw882xx_dev_control[1].get = aw882xx_switch_get;
-	aw882xx_dev_control[1].put = aw882xx_switch_set;
+	/* read-only: each read runs one HAL-driven monitor cycle (hal mode only) */
+	ctl[4].access = SNDRV_CTL_ELEM_ACCESS_READ | SNDRV_CTL_ELEM_ACCESS_VOLATILE;
+	ctl[4].info = aw882xx_hal_monitor_work_info;
+	ctl[4].get = aw882xx_hal_monitor_work_get;
 
-	kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
-	if (!kctl_name)
-		return -ENOMEM;
-
-	snprintf(kctl_name, AW_NAME_BUF_MAX, "aw_dev_%d_monitor", aw882xx->index);
-
-	aw882xx_dev_control[2].name = kctl_name;
-	aw882xx_dev_control[2].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-	aw882xx_dev_control[2].info = aw882xx_monitor_info;
-	aw882xx_dev_control[2].get = aw882xx_monitor_get;
-	aw882xx_dev_control[2].put = aw882xx_monitor_set;
-
-
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-
-        kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
-        if (!kctl_name)
-                return -ENOMEM;
-
-        snprintf(kctl_name, AW_NAME_BUF_MAX, "aw_dev_%d_ramp", aw882xx->aw_pa->channel);
-
-        aw882xx_dev_control[3].name = kctl_name;
-        aw882xx_dev_control[3].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-        aw882xx_dev_control[3].info = aw882xx_ramp_info;
-        aw882xx_dev_control[3].get = aw882xx_ramp_get;
-        aw882xx_dev_control[3].put = aw882xx_ramp_set;
-
-        kctl_name = devm_kzalloc(aw882xx->codec->dev, AW_NAME_BUF_MAX, GFP_KERNEL);
-        if (!kctl_name)
-                return -ENOMEM;
-
-        snprintf(kctl_name, AW_NAME_BUF_MAX, "aw_dev_%d_attenuate", aw882xx->aw_pa->channel);
-
-        aw882xx_dev_control[4].name = kctl_name;
-        aw882xx_dev_control[4].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-        aw882xx_dev_control[4].info = aw882xx_attenuate_info;
-        aw882xx_dev_control[4].get = aw882xx_attenuate_get;
-        aw882xx_dev_control[4].put = aw882xx_attenuate_set;
-#endif
-
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-	aw_componet_codec_ops.add_codec_controls(aw882xx->codec,
-						aw882xx_dev_control, 5);
-#else
-	aw_componet_codec_ops.add_codec_controls(aw882xx->codec,
-						aw882xx_dev_control, 3);
-#endif
-	if (gpio_is_valid(aw882xx->spksw_gpio))
-		aw_componet_codec_ops.add_codec_controls(aw882xx->codec,
-			aw882xx_spksw_control, ARRAY_SIZE(aw882xx_spksw_control));
-
-	return 0;
+	return aw_componet_codec_ops.add_codec_controls(aw882xx->codec,
+						ctl, AW_DEV_KCTL_NUM);
 }
 
 static void aw882xx_request_firmware(struct work_struct *work)
@@ -1311,11 +1354,11 @@ void aw882xx_kcontorl_set(struct aw882xx *aw882xx)
 	int ret;
 
 	ret = aw882xx_dev_set_afe_module_en(AW_RX_MODULE, g_algo_rx_en);
-	if (ret)
+	if (ret && ret != -EOPNOTSUPP)
 		aw_dev_err(aw882xx->dev, "afe set, ret=%d", ret);
 
 	ret = aw882xx_dev_set_copp_module_en(g_algo_copp_en);
-	if (ret)
+	if (ret && ret != -EOPNOTSUPP)
 		aw_dev_err(aw882xx->dev, "copp set error, ret=%d", ret);
 }
 
@@ -1490,6 +1533,17 @@ static struct snd_kcontrol_new aw882xx_controls[] = {
 #endif
 	SOC_SINGLE_EXT("aw882xx_fadeout_us", 0, 0, 1000000, 0,
 		aw882xx_get_fade_out_time, aw882xx_set_fade_out_time),
+	/* stock accepts and ignores writes; read-only here */
+	{
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name = "aw882xx_hal_monitor_time",
+		.access = SNDRV_CTL_ELEM_ACCESS_READ,
+		.info = snd_soc_info_volsw,
+		.get = aw882xx_hal_get_monitor_time,
+		.private_value = SOC_SINGLE_VALUE(0, 0, 100000, 0, 0),
+	},
+	SOC_SINGLE_EXT("aw882xx_spk_sw_gpio_switch", SND_SOC_NOPM, 0, 3, 0,
+		aw882xx_spksw_gpio_get, aw882xx_spksw_gpio_put),
 #ifdef CONFIG_AW_MTK_RCV_SUPPORT
 	SOC_SINGLE_EXT("aw882xx_rcv_en", 0, 0, 1000000, 0,
 		aw882xx_get_rcv_en, aw882xx_set_rcv_en),
@@ -1634,6 +1688,10 @@ static void aw882xx_load_fw(struct aw882xx *aw882xx)
 #ifdef AW_QCOM_PLATFORM
 	aw882xx_request_firmware(&aw882xx->fw_work.work);
 #else
+	if (aw882xx->sync_load) {
+		aw882xx_request_firmware(&aw882xx->fw_work.work);
+		return;
+	}
 	queue_delayed_work(aw882xx->work_queue,
 			&aw882xx->fw_work,
 			msecs_to_jiffies(AW882XX_LOAD_FW_DELAY_TIME));
@@ -1659,7 +1717,7 @@ static int aw882xx_codec_probe(aw_snd_soc_codec_t *aw_codec)
 
 	aw882xx->codec = aw_codec;
 
-	if (aw882xx->index == 0)
+	if (aw882xx->aw_pa->channel == 0)
 		aw882xx_add_codec_controls(aw882xx);
 
 	aw882xx_add_widgets(aw882xx);
@@ -1708,16 +1766,17 @@ static int aw882xx_dai_drv_append_suffix(struct aw882xx *aw882xx,
 
 	if ((dai_drv != NULL) && (num_dai > 0))
 		for (i = 0; i < num_dai; i++) {
-			snprintf(buf, 50, "%s-%x-%x", dai_drv[i].name, i2cbus,
+			/* stock: "<dai>-<bus decimal>-<addr hex>" */
+			snprintf(buf, 50, "%s-%d-%x", dai_drv[i].name, i2cbus,
 				addr);
 			dai_drv[i].name = aw882xx_devm_kstrdup(aw882xx->dev, buf);
 
-			snprintf(buf, 50, "%s-%x-%x",
+			snprintf(buf, 50, "%s_%d_%x",
 						dai_drv[i].playback.stream_name,
 						i2cbus, addr);
 			dai_drv[i].playback.stream_name = aw882xx_devm_kstrdup(aw882xx->dev, buf);
 
-			snprintf(buf, 50, "%s-%x-%x",
+			snprintf(buf, 50, "%s_%d_%x",
 						dai_drv[i].capture.stream_name,
 						i2cbus, addr);
 			dai_drv[i].capture.stream_name = aw882xx_devm_kstrdup(aw882xx->dev, buf);
@@ -1914,6 +1973,7 @@ static int aw882xx_parse_dt(struct device *dev, struct aw882xx *aw882xx,
 	int ret;
 	int32_t dc_enable = 0;
 	int32_t sync_enable = 0;
+	uint32_t value = 0;
 
 	/*gpio dts parser*/
 	ret = aw882xx_parse_gpio_dt(aw882xx, np);
@@ -1943,6 +2003,31 @@ static int aw882xx_parse_dt(struct device *dev, struct aw882xx *aw882xx,
 
 	aw882xx->phase_sync = sync_enable;
 
+	ret = of_property_read_u32(np, "rename-flag", &value);
+	if (ret < 0) {
+		aw_dev_info(aw882xx->dev, "read rename flag failed, default rename off!");
+		value = 0;
+	} else {
+		aw_dev_info(aw882xx->dev, "rename-flag = %d", value);
+	}
+	/*
+	 * Stock renames the codec device and suffixes DAIs with the channel
+	 * when this is set. Amethyst's DT does not set it and this build does
+	 * not implement it: keep the i2c-suffix naming and say so.
+	 */
+	aw882xx->rename_flag = value;
+	if (value)
+		aw_dev_err(aw882xx->dev, "rename-flag is not supported, ignoring");
+
+	ret = of_property_read_u32(np, "sync-load", &value);
+	if (ret < 0) {
+		aw_dev_info(aw882xx->dev, "read sync load failed,default async loading fw");
+		value = 0;
+	} else {
+		aw_dev_info(aw882xx->dev, "sync load is %d", value);
+	}
+	aw882xx->sync_load = value;
+
 	return 0;
 }
 
@@ -1961,6 +2046,26 @@ int aw882xx_hw_reset(struct aw882xx *aw882xx)
 	return 0;
 }
 
+/*
+ * Amethyst is second-sourced: the "awinic,aw882xx_smartpa" nodes at 0x34/0x35
+ * can carry a FourSemi FS1945 instead (device ID 0x2900 in register 0x03).
+ * Stock aw882xx_dlkm bundles FourSemi's driver and hands such a chip to
+ * exfsm_i2c_probe(). That code is not available as source, so this build
+ * only identifies the chip and refuses it.
+ */
+#define AW_FS19XX_ID_REG	(0x03)
+#define AW_FS1945_DEVICE_ID	(0x2900)
+
+static bool aw882xx_is_fs1945(struct aw882xx *aw882xx)
+{
+	unsigned int reg_value = 0;
+
+	if (aw882xx_i2c_read(aw882xx, AW_FS19XX_ID_REG, &reg_value) < 0)
+		return false;
+
+	return reg_value == AW_FS1945_DEVICE_ID;
+}
+
 static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 {
 	int ret = -1;
@@ -1971,6 +2076,8 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 		ret = aw882xx_i2c_read(aw882xx, AW882XX_CHIP_ID_REG, &reg_value);
 		if (ret < 0) {
 			aw_dev_err(aw882xx->dev, "failed to read REG_ID: %d", ret);
+			if (aw882xx_is_fs1945(aw882xx))
+				goto fs1945;
 			return -EIO;
 		}
 		switch (reg_value) {
@@ -2007,6 +2114,8 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 		default:
 			aw_dev_info(aw882xx->dev, "unsupported device revision (0x%x)",
 							reg_value);
+			if (aw882xx_is_fs1945(aw882xx))
+				goto fs1945;
 			break;
 		}
 		cnt++;
@@ -2015,6 +2124,11 @@ static int aw882xx_read_chipid(struct aw882xx *aw882xx)
 	}
 
 	return -EINVAL;
+
+fs1945:
+	aw_dev_err(aw882xx->dev,
+		"FourSemi FS1945 detected: not supported by this build (stock drives it through FourSemi code bundled in aw882xx_dlkm)");
+	return -ENODEV;
 }
 
 static irqreturn_t aw882xx_irq(int irq, void *data)
@@ -2566,6 +2680,9 @@ static int aw882xx_i2c_probe(struct i2c_client *i2c,
 	ret = aw882xx_read_chipid(aw882xx);
 	if (ret < 0) {
 		aw_dev_err(&i2c->dev, "aw882xx_read_chipid failed ret=%d", ret);
+		/* leave the part in reset, as stock does before handing it on */
+		if (gpio_is_valid(aw882xx->reset_gpio))
+			gpio_set_value_cansleep(aw882xx->reset_gpio, 0);
 
 #ifdef CONFIG_DUMMY_SND_CARD_SUPPORT
 		//notify to machine driver

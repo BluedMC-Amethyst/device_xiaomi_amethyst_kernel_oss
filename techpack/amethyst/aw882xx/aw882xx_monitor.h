@@ -145,6 +145,8 @@ struct aw_monitor_desc {
 	struct delayed_work delay_work;
 	struct aw_monitor_cfg monitor_cfg;
 
+	uint8_t running;	/* set between monitor start and stop */
+	uint8_t hal_mode;	/* DT monitor-mode = "hal_monitor" */
 	uint8_t first_entry;
 	uint8_t samp_count;
 	uint8_t db_offset;
@@ -166,6 +168,10 @@ void aw882xx_monitor_start(struct aw_monitor_desc *monitor_desc);
 int aw882xx_monitor_stop(struct aw_monitor_desc *monitor_desc);
 void aw882xx_monitor_init(struct aw_monitor_desc *monitor_desc);
 void aw882xx_monitor_deinit(struct aw_monitor_desc *monitor_desc);
+void aw882xx_monitor_hal_get_time(struct aw_monitor_desc *monitor_desc,
+				uint32_t *time);
+void aw882xx_monitor_hal_work(struct aw_monitor_desc *monitor_desc,
+				uint32_t *vmax);
 int aw882xx_monitor_parse_fw(struct aw_monitor_desc *monitor_desc,
 				uint8_t *data, uint32_t data_len);
 

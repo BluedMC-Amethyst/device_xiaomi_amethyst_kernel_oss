@@ -362,12 +362,71 @@ static int aw_dev_reg_fw_update(struct aw_device *aw_dev)
 	aw_dev->ops.aw_get_volume(aw_dev, &init_volume);
 	aw_dev->volume_desc.init_volume = init_volume;
 
-	/*keep min volume*/
-	aw_dev->ops.aw_set_volume(aw_dev, aw_dev->volume_desc.mute_volume);
+	/*
+	 * Stock: a profile change drops the user attenuation back to 0. The
+	 * monitor attenuation is kept; the monitor re-evaluates on its first
+	 * cycle after start.
+	 */
+	if (aw_dev->cur_prof != aw_dev->set_prof)
+		aw_dev->volume_desc.ctl_volume = 0;
+
+	/* Stock: only fade-enabled amps are parked at the mute volume here. */
+	if (aw_dev->fade_en)
+		aw_dev->ops.aw_set_volume(aw_dev, init_volume +
+				aw_dev->volume_desc.mute_volume);
 
 	aw_dev_info(aw_dev->dev, "load %s done", prof_name);
 
 	return ret;
+}
+
+
+/*
+ * Effective attenuation: the larger of the user (aw_dev_<ch>_volume) and the
+ * monitor (battery/temperature table) attenuation, so the user control can
+ * never undo a protection cut. Same rule as stock.
+ */
+static unsigned int aw_dev_effective_volume(struct aw_device *aw_dev)
+{
+	struct aw_volume_desc *desc = &aw_dev->volume_desc;
+
+	return max(desc->ctl_volume, desc->monitor_volume);
+}
+
+int aw882xx_dev_apply_volume(struct aw_device *aw_dev)
+{
+	return aw882xx_dev_set_volume(aw_dev, aw_dev_effective_volume(aw_dev));
+}
+
+int aw882xx_dev_get_volume(struct aw_device *aw_dev, unsigned int *get_vol)
+{
+	unsigned int hw_vol = 0;
+	int ret;
+
+	ret = aw_dev->ops.aw_get_volume(aw_dev, &hw_vol);
+	if (ret < 0) {
+		aw_dev_err(aw_dev->dev, "read volume failed");
+		return ret;
+	}
+	*get_vol = hw_vol - aw_dev->volume_desc.init_volume;
+	return 0;
+}
+
+int aw882xx_dev_set_volume(struct aw_device *aw_dev, unsigned int set_vol)
+{
+	int ret = -1;
+	unsigned int hw_vol = 0;
+	struct aw_volume_desc *vol_desc = &aw_dev->volume_desc;
+
+	hw_vol = set_vol + vol_desc->init_volume;
+
+	ret = aw_dev->ops.aw_set_volume(aw_dev, hw_vol);
+	if (ret < 0) {
+		aw_dev_err(aw_dev->dev, "set volume failed");
+		return ret;
+	}
+
+	return 0;
 }
 
 
@@ -394,24 +453,6 @@ int aw882xx_dev_get_ramp_status(struct aw_device *aw_dev, uint32_t *get_ramp)
         *get_ramp = aw_dev->ramp_en;
 
         return 0;
-}
-
-
-int aw882xx_dev_set_volume(struct aw_device *aw_dev, unsigned int set_vol)
-{
-	int ret = -1;
-	unsigned int hw_vol = 0;
-	struct aw_volume_desc *vol_desc = &aw_dev->volume_desc;
-
-	hw_vol = set_vol + vol_desc->init_volume;
-
-	ret = aw_dev->ops.aw_set_volume(aw_dev, hw_vol);
-	if (ret < 0) {
-		aw_dev_err(aw_dev->dev, "set volume failed");
-		return ret;
-	}
-
-	return 0;
 }
 
 
@@ -508,85 +549,77 @@ int aw882xx_dev_get_attenuate_status(struct aw_device *aw_dev, uint32_t *get_att
 
 #endif
 
+/*
+ * Xiaomi's stepped fade, used only on amps with DT fade-flag set (the top
+ * amp on amethyst). Attenuation is walked between the current level and
+ * AW_FADE_FLOOR_VOL with a step that shrinks as the level gets louder. No
+ * sleep between steps (I2C write time only), as in stock.
+ */
+#define AW_FADE_FLOOR_VOL	(400)	/* 50 dB in 0.125 dB units */
+
+static int aw_dev_fade_step(int vol)
+{
+	if (vol > 250)
+		return 15;
+	if (vol > 200)
+		return 10;
+	if (vol > 150)
+		return 7;
+	if (vol > 120)
+		return 6;
+	if (vol > 48)
+		return 5;
+	return 1;
+}
+
 static void aw_dev_fade_in(struct aw_device *aw_dev)
 {
-	int i = 0;
-	int fade_step = aw_dev->vol_step;
 	struct aw_volume_desc *desc = &aw_dev->volume_desc;
-	int fade_in_vol = desc->init_volume;
+	int target = aw_dev_effective_volume(aw_dev);
+	int vol;
 
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-	/*for moto ramping*/
-	struct aw882xx *aw882xx = (struct aw882xx *)aw_dev->private_data;
-#endif
-
-
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-        if(aw_dev->attenuate_en){
-                aw_dev_info(aw_dev->dev,"attenuate enabled, reduce fade_in_vol to%d",fade_in_vol);
-                fade_in_vol += AW_ATTENUATION_VOL;  //reduce 20db
-
-                //we should cancel attenuation 5s later in case speaker is still on
-                aw_dev_info(aw_dev->dev,"schedule work to cancel attenuation 5s later");
-                aw_dev->attenuate_in_process = 1;
-                queue_delayed_work(aw_dev->ramp_queue,
-                                &aw_dev->attenuate_work,
-                                5*HZ);
-        }
-#endif
-
-	if (fade_step == 0 || g_fade_in_time == 0) {
-		aw_dev->ops.aw_set_volume(aw_dev, fade_in_vol);
+	if (aw_dev->vol_step == 0 || g_fade_in_time == 0 ||
+			target >= AW_FADE_FLOOR_VOL) {
+		aw882xx_dev_set_volume(aw_dev, target);
 		return;
 	}
 
-	/*volume up*/
-	for (i = desc->mute_volume; i >= fade_in_vol; i -= fade_step) {
-		aw_dev->ops.aw_set_volume(aw_dev, i);
-
-#ifdef CONFIG_AW_RAMPING_SUPPORT
-		/*for moto ramping*/
-		if(aw882xx->i2c->addr==0x35) {
-		    if(g_fade_in_time_top == 1) {
-		        //far ,use defalut time.
-		        g_fade_in_time_temp = g_fade_in_time;
-		    } else {
-		        g_fade_in_time_temp = g_fade_in_time_top;
-		    }
-		} else {
-		    g_fade_in_time_temp = g_fade_in_time;
-		}
-		usleep_range(g_fade_in_time_temp, g_fade_in_time_temp + 10);
-#else
-		usleep_range(g_fade_in_time, g_fade_in_time + 10);
-#endif
+	/*
+	 * Deliberate deviation: stock always ramps to 0 dB attenuation and
+	 * leaves the user/monitor attenuation to be re-applied later. Here the
+	 * ramp stops at the effective attenuation, so a protection cut is never
+	 * bypassed, even briefly.
+	 */
+	vol = AW_FADE_FLOOR_VOL;
+	while (vol > target) {
+		vol -= aw_dev_fade_step(vol);
+		if (vol < target)
+			vol = target;
+		aw_dev->ops.aw_set_volume(aw_dev, vol + desc->init_volume);
 	}
-
-	if (i != fade_in_vol)
-		aw_dev->ops.aw_set_volume(aw_dev, fade_in_vol);
 }
 
 static void aw_dev_fade_out(struct aw_device *aw_dev)
 {
-	int i = 0;
-	unsigned start_volume = 0;
-	int fade_step = aw_dev->vol_step;
 	struct aw_volume_desc *desc = &aw_dev->volume_desc;
+	int vol;
 
-	if (fade_step == 0 || g_fade_out_time == 0) {
-		aw_dev->ops.aw_set_volume(aw_dev, desc->mute_volume);
+	if (aw_dev->vol_step == 0 || g_fade_out_time == 0) {
+		aw_dev->ops.aw_set_volume(aw_dev,
+				desc->init_volume + desc->mute_volume);
 		return;
 	}
 
-	aw_dev->ops.aw_get_volume(aw_dev, &start_volume);
-	i = start_volume;
-	for (i = start_volume; i <= desc->mute_volume; i += fade_step) {
-		aw_dev->ops.aw_set_volume(aw_dev, i);
-		usleep_range(g_fade_out_time, g_fade_out_time + 10);
-	}
-	if (i != desc->mute_volume) {
-		aw_dev->ops.aw_set_volume(aw_dev, desc->mute_volume);
-		usleep_range(g_fade_out_time, g_fade_out_time + 10);
+	/*
+	 * Stock starts from the user attenuation; starting from the effective
+	 * one avoids a brief volume increase when the monitor cut is larger.
+	 */
+	vol = aw_dev_effective_volume(aw_dev);
+	while (vol < AW_FADE_FLOOR_VOL) {
+		vol += aw_dev_fade_step(vol);
+		if (vol > AW_FADE_FLOOR_VOL)
+			vol = AW_FADE_FLOOR_VOL;
+		aw_dev->ops.aw_set_volume(aw_dev, vol + desc->init_volume);
 	}
 }
 
@@ -647,7 +680,8 @@ static void aw_dev_mute(struct aw_device *aw_dev, bool mute)
                 }
 #endif
 
-		aw_dev_fade_out(aw_dev);
+		if (aw_dev->fade_en)
+			aw_dev_fade_out(aw_dev);
 		aw_dev->ops.aw_i2c_write_bits(aw_dev, mute_desc->reg,
 				mute_desc->mask,
 				mute_desc->enable);
@@ -672,7 +706,8 @@ static void aw_dev_mute(struct aw_device *aw_dev, bool mute)
                         }
                 } else
 #endif
-		aw_dev_fade_in(aw_dev);
+		if (aw_dev->fade_en)
+			aw_dev_fade_in(aw_dev);
 	}
 	aw_dev_info(aw_dev->dev, "done");
 }
@@ -901,6 +936,18 @@ int aw882xx_dev_get_cali_re(struct aw_device *aw_dev, int32_t *cali_re)
 {
 
 	return aw882xx_dsp_read_cali_re(aw_dev, cali_re);
+}
+
+int aw882xx_dev_monitor_hal_get_time(struct aw_device *aw_dev, uint32_t *time)
+{
+	aw882xx_monitor_hal_get_time(&aw_dev->monitor_desc, time);
+	return 0;
+}
+
+int aw882xx_dev_monitor_hal_work(struct aw_device *aw_dev, uint32_t *vmax)
+{
+	aw882xx_monitor_hal_work(&aw_dev->monitor_desc, vmax);
+	return 0;
 }
 
 int aw882xx_dev_dc_status(struct aw_device *aw_dev)
@@ -1164,7 +1211,10 @@ int aw882xx_device_start(struct aw_device *aw_dev)
 	aw_dev_pwd(aw_dev, false);
 	usleep_range(AW_2000_US, AW_2000_US + 10);
 
-	ret = aw_dev_syspll_check(aw_dev);
+	if (aw_dev->pll_check_disable)
+		ret = 0;
+	else
+		ret = aw_dev_syspll_check(aw_dev);
 	if (ret < 0) {
 		aw_dev_reg_dump(aw_dev);
 		aw_dev_pwd(aw_dev, true);
@@ -1176,8 +1226,11 @@ int aw882xx_device_start(struct aw_device *aw_dev)
 	aw_dev_amppd(aw_dev, false);
 	usleep_range(AW_1000_US, AW_1000_US + 50);
 
-	/*check i2s status*/
-	ret = aw_dev_sysst_check(aw_dev);
+	/*check i2s status (skipped with pll-check-disable, as stock)*/
+	if (aw_dev->pll_check_disable)
+		ret = 0;
+	else
+		ret = aw_dev_sysst_check(aw_dev);
 	if (ret < 0) {
 		aw_dev_reg_dump(aw_dev);
 		/*close tx feedback*/
@@ -1314,9 +1367,26 @@ static void aw_device_vcalb_half_dt(struct aw_device *aw_dev)
 	aw_dev->vcalb_half = vcalb_half_enable;
 }
 
+static void aw_device_parse_fade_flag_dt(struct aw_device *aw_dev)
+{
+	uint32_t fade_flag = 0;
+
+	if (of_property_read_u32(aw_dev->dev->of_node, "fade-flag", &fade_flag) < 0) {
+		aw_dev_info(aw_dev->dev, "read fade-flag failed,use default");
+		fade_flag = 0;
+	}
+	aw_dev->fade_en = fade_flag;
+	aw_dev_info(aw_dev->dev, "fade-flag: %d", aw_dev->fade_en);
+}
+
 static void aw_device_parse_dt(struct aw_device *aw_dev)
 {
 	aw_device_parse_sound_channel_dt(aw_dev);
+	aw_dev->pll_check_disable = of_property_read_bool(aw_dev->dev->of_node,
+							"pll-check-disable");
+	if (aw_dev->pll_check_disable)
+		aw_dev_info(aw_dev->dev, "pll check disable");
+	aw_device_parse_fade_flag_dt(aw_dev);
 	aw_device_vcalb_half_dt(aw_dev);
 	aw882xx_device_parse_topo_id_dt(aw_dev);
 	aw882xx_device_parse_port_id_dt(aw_dev);

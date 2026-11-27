@@ -143,6 +143,8 @@ struct aw882xx {
 	unsigned char index;
 	unsigned char phase_sync;	/* phase sync */
 	unsigned char dc_flag;
+	unsigned char rename_flag;	/* DT rename-flag (unused on amethyst) */
+	unsigned char sync_load;	/* DT sync-load: load ACF in codec probe */
 	unsigned char dbg_en_prof;	/* debug enable/disable profile function */
 	unsigned char allow_pw;		/* allow power */
 	int reset_gpio;
