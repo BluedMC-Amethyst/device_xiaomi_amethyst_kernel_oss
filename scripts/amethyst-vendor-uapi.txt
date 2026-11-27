@@ -8,6 +8,9 @@
 # driver agree on the ABI. Legacy CAF headers that no built module carries
 # come from the stock header dump (device/xiaomi/amethyst-kernel).
 #
+# The securemsm module splits qseecom.h: its ioctls are in qseecom_api.h.
+# linux/msm_audio.h is the legacy CAF header, not audio/linux/msm_audio.h.
+#
 # <dest>	<source>
 audio/linux/msm_audio.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio.h
 audio/linux/msm_audio_calibration.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio_calibration.h
@@ -28,7 +31,7 @@ linux/avtimer.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/avtimer.h
 linux/dn.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/dn.h
 linux/ipa_qmi_service_v01.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/ipa_qmi_service_v01.h
 linux/mhi.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/mhi.h
-linux/msm_audio.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio.h
+linux/msm_audio.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio.h
 linux/msm_audio_aac.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_aac.h
 linux/msm_audio_ac3.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_ac3.h
 linux/msm_audio_alac.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_alac.h
@@ -54,6 +57,7 @@ linux/nfsd/nfsfh.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/nfsd/nfsfh
 linux/power_state.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/power_state.h
 linux/qbt_handler.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/qbt_handler.h
 linux/qseecom.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/include/uapi/linux/qseecom.h
+linux/qseecom_api.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/include/uapi/linux/qseecom_api.h
 linux/qti-smmu-proxy.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/smmu-proxy/include/uapi/linux/qti-smmu-proxy.h
 linux/rmnet_data.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/rmnet_data.h
 linux/rmnet_ipa_fd_ioctl.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/rmnet_ipa_fd_ioctl.h
