@@ -39,6 +39,7 @@
 #endif
 #include <linux/of_irq.h>
 #include "st21nfc.h"
+#include "st21nfc_xiaomi.h"
 
 // Uncomment this to check CLF response during probe
 // #define WITH_PING_DURING_PROBE
@@ -57,7 +58,16 @@
 #define PROP_PWR_MON_RW_ON_NTF nci_opcode_pack(NCI_GID_PROPRIETARY, 5)
 #define PROP_PWR_MON_RW_OFF_NTF nci_opcode_pack(NCI_GID_PROPRIETARY, 6)
 
+#ifdef ST21NFC_XIAOMI_COMPAT
+/* XIAOMI-COMPAT: QTI drops reset-line writes while NFC is in the secure zone. */
+#define gpiod_set_value_t(x, y)                                                \
+	do {                                                                   \
+		if (!st21nfc_dev->secure_zone)                                 \
+			gpiod_set_value(x, y);                                 \
+	} while (0)
+#else
 #define gpiod_set_value_t(x,y) gpiod_set_value(x,y)
+#endif
 #define I2C_ID_NAME "st21nfc"
 
 
@@ -157,8 +167,18 @@ struct st21nfc_device {
 
 	/* irq_gpio polarity to be used */
 	unsigned int polarity_mode;
+
+#ifdef ST21NFC_XIAOMI_COMPAT
+	/*
+	 * XIAOMI-COMPAT: QTI secure-zone state.  Always false here: the stock
+	 * driver is built without NFC_SECURE_PERIPHERAL_ENABLED, so nothing
+	 * queries QTEE or sets it (see docs/amethyst-drivers/nfc.md).
+	 */
+	bool secure_zone;
+#endif
 };
 
+#ifndef ST21NFC_XIAOMI_COMPAT
 /*
  * Routine to enable clock.
  * this routine can be extended to select from multiple
@@ -187,6 +207,7 @@ static int st21nfc_clock_select(struct st21nfc_device *st21nfc_dev)
 err_clk:
 	return -EINVAL;
 }
+#endif /* !ST21NFC_XIAOMI_COMPAT */
 
 /*
  * Routine to disable clocks
@@ -663,11 +684,13 @@ static long st21nfc_dev_ioctl(struct file *filp, unsigned int cmd,
 	case ST21NFC_SET_POLARITY_HIGH:
 	case ST21NFC_LEGACY_SET_POLARITY_HIGH:
 		pr_info(" ### ST21NFC_SET_POLARITY_HIGH ###\n");
+#ifndef ST21NFC_XIAOMI_COMPAT
 		if (clk_pin_voting == true) {
 			ret = st21nfc_clock_select(st21nfc_dev);
 			if (ret < 0)
 				pr_err("%s : st21nfc_clock_select failed\n", __func__);
 		}
+#endif
 		st21nfc_loc_set_polaritymode(st21nfc_dev, IRQF_TRIGGER_HIGH);
 		break;
 
@@ -793,6 +816,7 @@ static long st21nfc_dev_ioctl(struct file *filp, unsigned int cmd,
 		if (enable_debug_log)
 			pr_debug("%s use ESE %d : %d\n", __func__, ret, tmp);
 		break;
+#ifndef ST21NFC_XIAOMI_COMPAT
 	case ST21NFC_CLK_DISABLE_UNPREPARE:
 		if (clk_pin_voting == true) {
 			ret = st21nfc_clock_deselect(st21nfc_dev);
@@ -800,6 +824,17 @@ static long st21nfc_dev_ioctl(struct file *filp, unsigned int cmd,
 				pr_err("%s : st21nfc_clock_deselect failed\n", __func__);
 		}
 		break;
+#else
+	/*
+	 * XIAOMI-COMPAT: the stock driver has no CLK_DISABLE_UNPREPARE and no
+	 * secure-zone support; both fall through to -EINVAL ("bad ioctl").
+	 * The stock HAL tolerates the CLK_DISABLE_UNPREPARE failure.
+	 */
+	case NFC_SECURE_ZONE:
+		pr_err("%s : secure zone control not supported\n", __func__);
+		ret = -EINVAL;
+		break;
+#endif
 	default:
 		pr_err("%s bad ioctl %u\n", __func__, cmd);
 		ret = -EINVAL;
@@ -1174,6 +1209,9 @@ static int st21nfc_probe(struct i2c_client *client,
 	int t;
 #endif
 
+#ifdef ST21NFC_XIAOMI_COMPAT
+	pr_info("%s: enter\n", __func__);
+#endif
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("%s : need I2C_FUNC_I2C\n", __func__);
 		return -ENODEV;
@@ -1208,6 +1246,13 @@ static int st21nfc_probe(struct i2c_client *client,
 		devm_gpiod_put(dev,st21nfc_dev->gpiod_irq);
 		return -ENODEV;
 	}
+
+#ifdef ST21NFC_XIAOMI_COMPAT
+	/* XIAOMI-COMPAT: no QTEE secure-zone query; always non-secure. */
+	st21nfc_dev->secure_zone = false;
+	pr_info("%s:st21nfc_dev->secure_zone = %s\n", __func__,
+		st21nfc_dev->secure_zone ? "true" : "false");
+#endif
 
 // QCOM and MTK54 use standard GPIO definition
 	st21nfc_dev->gpiod_pidle = devm_gpiod_get(dev, "pidle", GPIOD_IN);
@@ -1260,12 +1305,22 @@ static int st21nfc_probe(struct i2c_client *client,
 
 	st21nfc_dev->gpiod_clkreq = devm_gpiod_get(dev, "clkreq", GPIOD_IN);
 	if (IS_ERR_OR_NULL(st21nfc_dev->gpiod_clkreq)) {
+#ifdef ST21NFC_XIAOMI_COMPAT
+		pr_info("%s : CLK_REQ not present\n", __func__);
+#else
 		pr_warn("[OPTIONAL] %s : Unable to request clkreq-gpios\n",
 			__func__);
+#endif
 		ret = 0;
 		clk_pin_voting = true;
 		st21nfc_dev->clk_run = false;
 	} else {
+#ifdef ST21NFC_XIAOMI_COMPAT
+		/* XIAOMI-COMPAT: CLK_REQ must wake the SoC through the MPM. */
+		ret = st21nfc_xm_clkreq_wake_setup(dev);
+		if (ret < 0)
+			goto err_pidle_workqueue;
+#endif
 		if (!device_property_read_bool(dev, "st,clk_pinctrl")) {
 			pr_debug("%s:[OPTIONAL] clk_pinctrl not set\n",
 				 __func__);
@@ -1354,6 +1409,9 @@ static int st21nfc_probe(struct i2c_client *client,
 	}
 	st21nfc_dev->irq_wakeup_source = wakeup_source_register(NULL, "st21nfc");
 	st21nfc_dev->irq_wake_up = false;
+#ifdef ST21NFC_XIAOMI_COMPAT
+	pr_info("%s: probing nfc i2c success\n", __func__);
+#endif
 
 	return 0;
 
