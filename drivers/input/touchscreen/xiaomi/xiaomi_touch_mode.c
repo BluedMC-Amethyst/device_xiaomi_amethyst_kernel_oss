@@ -780,7 +780,7 @@ static void xiaomi_touch_set_mode_value(common_data_t *common_data)
 	case Touch_Debug_Level:
 		LOG_INFO("Touch debug log level [%d]", val);
 		touch_mode[touch_id][mode][GET_CUR_VALUE] = val;
-		current_log_level = val;
+		tp_current_log_level = val;
 		if (xiaomi_touch_driver_param->hardware_operation.touch_log_level_control_v2)
 			xiaomi_touch_driver_param->hardware_operation.touch_log_level_control_v2(val);
 		break;

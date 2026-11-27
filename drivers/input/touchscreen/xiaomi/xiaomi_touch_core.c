@@ -989,7 +989,12 @@ static int xiaomi_get_charging_status(void)
 		if (rc < 0)
 			LOG_ERROR("Couldn't get DC online status, rc=%d\n", rc);
 		else if (val.intval == 1)
-			return CHARGING | WIRELESS_CHARGING;
+			/*
+			 * amethyst: stock reports plain CHARGING for wireless and
+			 * wired (xiaomi_power_supply_work 0x3054..0x30b0), so the
+			 * HAL and the IC only ever see 0 or 1.
+			 */
+			return CHARGING;
 	}
 
 	usb_psy = power_supply_get_by_name("usb");
@@ -998,7 +1003,7 @@ static int xiaomi_get_charging_status(void)
 		if (rc < 0)
 			LOG_ERROR("Couldn't get usb online status, rc=%d\n", rc);
 		else if (val.intval == 1)
-			return CHARGING | WIRED_CHARGING;
+			return CHARGING;
 	}
 	return NOT_CHARGING;
 }

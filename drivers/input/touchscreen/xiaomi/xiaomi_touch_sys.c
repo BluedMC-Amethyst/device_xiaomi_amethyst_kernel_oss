@@ -11,8 +11,8 @@
 #define TOUCH_ID    0
 #define MAX_BUF_SIZE (sizeof(common_data_t))
 
-enum MI_TP_LOG_LEVEL current_log_level = MI_TP_LOG_INFO;
-EXPORT_SYMBOL_GPL(current_log_level);
+enum MI_TP_LOG_LEVEL tp_current_log_level = MI_TP_LOG_INFO;
+EXPORT_SYMBOL_GPL(tp_current_log_level);
 
 typedef struct abnormal_event {
 	u16 type;
@@ -583,7 +583,7 @@ CREATE_ATTR(touch_log_level, {
 				"[value0]: control xiaomi_touch log level, 0:Always,1:Error,2:Warning,3:Info,4:Debug,5:Verbose\n"
 				"[value1]: control vendor driver log level, 0:Always,1:Error,2:Warning,3:Info,4:Debug,5:Verbose\n"
 				"current xiaomi_touch log_level = %d, vendor log_level = %d\n",
-				current_log_level, vendor_input);
+				tp_current_log_level, vendor_input);
 	},
 	{
 		int input;
@@ -592,7 +592,7 @@ CREATE_ATTR(touch_log_level, {
 
 		if (sscanf(buf, "%d %d", &input, &vendor_input) < 0)
 			return -EINVAL;
-		current_log_level = input;
+		tp_current_log_level = input;
 		for (touch_id = 0; touch_id < MAX_TOUCH_PANEL_COUNT; touch_id++) {
 			xiaomi_touch_driver_param = get_xiaomi_touch_driver_param(touch_id);
 			if (xiaomi_touch_driver_param == NULL)

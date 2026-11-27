@@ -321,6 +321,74 @@ static struct input_dev *report_stylus_event(s8 touch_id, hal_report_piont_t *re
 	return stylus_input_dev;
 }
 
+/*
+ * amethyst: reconstructed from stock xiaomi_touch.ko report_touch_event
+ * (0xa734), the consumer of struct touch_event_data written to
+ * /dev/xiaomi-touch. Stock keeps the input device and its mutex in
+ * xiaomi_touch_data (offsets 10464/10472); here they are the ones
+ * register_xiaomi_input_dev() manages. As in stock, nothing is reported
+ * while no Xiaomi input device is registered for the touch id (goodix_core
+ * and focaltech_touch register their own devices, so on amethyst the THP HAL
+ * reports through those instead).
+ *
+ * Contacts with classification POINT_UP are released; any other
+ * classification is reported as a contact. BTN_TOUCH/BTN_TOOL_FINGER drop
+ * when no contact is down. count <= 0 releases all slots.
+ */
+int report_touch_event_data(const struct touch_event_data *data, int count)
+{
+	struct input_dev *input_dev;
+	s8 touch_id = data->touch_id;
+	int down = 0;
+	int i;
+
+	if (!get_xiaomi_touch_data(touch_id))
+		return -1;
+	input_dev = input_devs[touch_id];
+	if (!input_dev) {
+		LOG_INFO("touch id %d has no xiaomi input device", touch_id);
+		return -1;
+	}
+
+	mutex_lock(&ts_report_mutex[touch_id]);
+	if (count <= 0) {
+		for (i = 0; i < MAX_TOUCH_ID; i++) {
+			input_mt_slot(input_dev, i);
+			input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
+			input_report_abs(input_dev, ABS_MT_TRACKING_ID, -1);
+		}
+		input_report_key(input_dev, BTN_TOUCH, 0);
+		input_sync(input_dev);
+		goto out;
+	}
+
+	for (i = 0; i < count; i++) {
+		const struct touch_event_data *e = &data[i];
+
+		if (e->classification == POINT_UP) {
+			input_mt_slot(input_dev, e->slot);
+			input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
+			input_report_abs(input_dev, ABS_MT_TRACKING_ID, -1);
+		} else {
+			input_report_key(input_dev, BTN_TOUCH, 1);
+			input_report_key(input_dev, BTN_TOOL_FINGER, 1);
+			input_mt_slot(input_dev, e->slot);
+			input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
+			input_report_abs(input_dev, ABS_MT_POSITION_X, e->x);
+			input_report_abs(input_dev, ABS_MT_POSITION_Y, e->y);
+			down++;
+		}
+	}
+	if (!down) {
+		input_report_key(input_dev, BTN_TOUCH, 0);
+		input_report_key(input_dev, BTN_TOOL_FINGER, 0);
+	}
+	input_sync(input_dev);
+out:
+	mutex_unlock(&ts_report_mutex[touch_id]);
+	return 0;
+}
+
 int report_touch_event(s8 touch_id, u8 event_count)
 {
 	struct input_dev *input_dev = NULL;

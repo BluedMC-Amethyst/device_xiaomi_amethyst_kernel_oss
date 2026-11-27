@@ -101,7 +101,7 @@ read_common_data_end:
 static ssize_t xiaomi_touch_dev_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
 	int copy_size = 0;
-	static char temp_buf[1024];
+	static char temp_buf[1024] __aligned(8);
 
 	if (count >= 1024) {
 		return count;
@@ -125,6 +125,16 @@ static ssize_t xiaomi_touch_dev_write(struct file *file, const char __user *buf,
 			release_input_event_timeline();
 		}
 		add_common_data_to_buf(0, SET_CUR_VALUE, THP_ENABLE_WRITE_THP_TIME, 1, &value);
+		return count;
+	}
+	/*
+	 * amethyst: stock xiaomi_touch_dev_write (0x4c74..0x4c9c) treats any
+	 * other write whose size is a multiple of struct touch_event_data as an
+	 * array of contacts to report (stock does the division in 16 bits).
+	 */
+	if ((u16)count % sizeof(struct touch_event_data) == 0) {
+		report_touch_event_data((const struct touch_event_data *)temp_buf,
+			(u16)count / sizeof(struct touch_event_data));
 		return count;
 	}
 

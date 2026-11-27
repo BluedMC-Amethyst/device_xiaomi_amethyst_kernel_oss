@@ -112,11 +112,37 @@ enum param_parse_fail_type {
 };
 #endif
 
+/* amethyst: values from stock xiaomi_touch.ko BTF (WIRELESS_CHARGING = 3) */
 enum charge_status {
 	NOT_CHARGING = 0,
 	CHARGING = 1,
 	WIRED_CHARGING = 2,
-	WIRELESS_CHARGING = 4,
+	WIRELESS_CHARGING = 3,
+};
+
+/*
+ * amethyst: touch event injection ABI of stock xiaomi_touch.ko (BTF enum
+ * touch_event_classification and struct touch_event_data, 28 bytes).
+ * Writing N * sizeof(struct touch_event_data) bytes to /dev/xiaomi-touch
+ * reports N contacts on the touch id's Xiaomi input device
+ * (stock xiaomi_touch_dev_write 0x4c74, report_touch_event 0xa734).
+ * The names of the two trailing words are not recoverable from stock and
+ * stock does not read them.
+ */
+enum touch_event_classification {
+	POINT_NOP = -1,
+	POINT_UP = 0,
+	POINT_DOWN = 1,
+	PONIT_MOVE = 2,
+};
+
+struct touch_event_data {
+	s32 touch_id;
+	s32 slot;
+	s32 classification;	/* enum touch_event_classification */
+	s32 x;
+	s32 y;
+	s32 reserved[2];
 };
 
 typedef enum {
@@ -149,46 +175,46 @@ typedef enum {
 } syna_shub_ipc_cmd_type_t;
 #endif
 
-extern enum MI_TP_LOG_LEVEL current_log_level;
+extern enum MI_TP_LOG_LEVEL tp_current_log_level;
 
 #define LOG_ALWAYS(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_ALWAYS) {\
+			if (tp_current_log_level >= MI_TP_LOG_ALWAYS) {\
 				pr_info(LOG_TAG "_A][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
 
 #define LOG_ERROR(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_ERROR) {\
+			if (tp_current_log_level >= MI_TP_LOG_ERROR) {\
 				pr_info(LOG_TAG "_E][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
 
 #define LOG_WARNING(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_WARNING) {\
+			if (tp_current_log_level >= MI_TP_LOG_WARNING) {\
 				pr_info(LOG_TAG "_W][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
 
 #define LOG_INFO(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_INFO) {\
+			if (tp_current_log_level >= MI_TP_LOG_INFO) {\
 				pr_info(LOG_TAG "_I][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
 
 #define LOG_DEBUG(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_DEBUG) {\
+			if (tp_current_log_level >= MI_TP_LOG_DEBUG) {\
 				pr_info(LOG_TAG "_D][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
 
 #define LOG_VERBOSE(fmt, args...)\
 		do {\
-			if (current_log_level >= MI_TP_LOG_VERBOSE) {\
+			if (tp_current_log_level >= MI_TP_LOG_VERBOSE) {\
 				pr_info(LOG_TAG "_V][%s:%d]: " fmt, __func__, __LINE__, ##args);\
 			}\
 		} while (0)
@@ -443,6 +469,7 @@ void unregister_xiaomi_input_dev(s8 touch_id);
 struct input_dev *register_xiaomi_stylus_input_dev(s8 touch_id, int max_x, int max_y, ic_product_code code);
 void unregister_xiaomi_stylus_input_dev(s8 touch_id);
 int report_touch_event(s8 touch_id, u8 event_count);
+int report_touch_event_data(const struct touch_event_data *data, int count);
 dma_addr_t get_report_point_info_phy_addr(void);
 
 #if defined(FLIP_STATE)
