@@ -1,0 +1,70 @@
+# Vendor UAPI headers exported by headers_install, which LineageOS turns into
+# the qti_*_kernel_headers libraries that qcom-caf HALs build against.
+# Xiaomi's Bazel uapi dist provided them on stock; this kernel does not carry
+# them. amethyst-los-setup.sh copies each <source> (relative to the LineageOS
+# tree) to include/uapi/<dest> in the kernel copy.
+#
+# Prefer the module source that is actually built, so userspace and the
+# driver agree on the ABI. Legacy CAF headers that no built module carries
+# come from the stock header dump (device/xiaomi/amethyst-kernel).
+#
+# <dest>	<source>
+audio/linux/msm_audio.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio.h
+audio/linux/msm_audio_calibration.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio_calibration.h
+audio/sound/audio_effects.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/audio_effects.h
+audio/sound/audio_slimslave.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/audio_slimslave.h
+audio/sound/devdep_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/devdep_params.h
+audio/sound/lsm_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/lsm_params.h
+audio/sound/msmcal-hwdep.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/msmcal-hwdep.h
+audio/sound/voice_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/voice_params.h
+audio/sound/wcd-dsp-glink.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/wcd-dsp-glink.h
+display/drm/mi_disp.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/drm/mi_disp.h
+display/drm/msm_drm_pp.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/drm/msm_drm_pp.h
+display/drm/sde_drm.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/drm/sde_drm.h
+display/hdcp/msm_hdmi_hdcp_mgr.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/hdcp/msm_hdmi_hdcp_mgr.h
+display/media/mmm_color_fmt.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/media/mmm_color_fmt.h
+display/media/msm_sde_rotator.h	kernel/xiaomi/sm7635-modules/qcom/opensource/display-drivers/include/uapi/display/media/msm_sde_rotator.h
+linux/avtimer.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/avtimer.h
+linux/dn.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/dn.h
+linux/ipa_qmi_service_v01.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/ipa_qmi_service_v01.h
+linux/mhi.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/mhi.h
+linux/msm_audio.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio.h
+linux/msm_audio_aac.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_aac.h
+linux/msm_audio_ac3.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_ac3.h
+linux/msm_audio_alac.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_alac.h
+linux/msm_audio_amrnb.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_amrnb.h
+linux/msm_audio_amrwb.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_amrwb.h
+linux/msm_audio_amrwbplus.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_amrwbplus.h
+linux/msm_audio_ape.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_ape.h
+linux/msm_audio_calibration.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/linux/msm_audio_calibration.h
+linux/msm_audio_g711.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_g711.h
+linux/msm_audio_g711_dec.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_g711_dec.h
+linux/msm_audio_mvs.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_mvs.h
+linux/msm_audio_qcp.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_qcp.h
+linux/msm_audio_sbc.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_sbc.h
+linux/msm_audio_voicememo.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_voicememo.h
+linux/msm_audio_wma.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_wma.h
+linux/msm_audio_wmapro.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_wmapro.h
+linux/msm_dsps.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_dsps.h
+linux/msm_eth.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_eth.h
+linux/msm_ipa.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/msm_ipa.h
+linux/netfilter_decnet.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/netfilter_decnet.h
+linux/nfc/nfcinfo.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/nfc/nfcinfo.h
+linux/nfsd/nfsfh.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/nfsd/nfsfh.h
+linux/power_state.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/power_state.h
+linux/qbt_handler.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/qbt_handler.h
+linux/qseecom.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/include/uapi/linux/qseecom.h
+linux/qti-smmu-proxy.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/smmu-proxy/include/uapi/linux/qti-smmu-proxy.h
+linux/rmnet_data.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/rmnet_data.h
+linux/rmnet_ipa_fd_ioctl.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/rmnet_ipa_fd_ioctl.h
+linux/slatecom_interface.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/slatecom_interface.h
+linux/ubwcp_ioctl.h	kernel/xiaomi/sm7635-modules/qcom/opensource/mm-sys-kernel/ubwcp/include/uapi/ubwcp_ioctl.h
+linux/wcd-spi-ac-params.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/wcd-spi-ac-params.h
+sound/audio_compressed_formats.h	device/xiaomi/amethyst-kernel/kernel-headers/sound/audio_compressed_formats.h
+sound/audio_effects.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/audio_effects.h
+sound/audio_slimslave.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/audio_slimslave.h
+sound/devdep_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/devdep_params.h
+sound/lsm_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/lsm_params.h
+sound/msmcal-hwdep.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/msmcal-hwdep.h
+sound/voice_params.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/voice_params.h
+sound/wcd-dsp-glink.h	kernel/xiaomi/sm7635-modules/qcom/opensource/audio-kernel/include/uapi/audio/sound/wcd-dsp-glink.h
