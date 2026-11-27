@@ -1,2 +1,23 @@
 Source: https://github.com/STMicroelectronics/ST54-android-kernel-nfc-i2c branch st_dev_kernel_5.15 commit 24ee578
+Licence: GPL-2.0-only (LICENSE.txt)
 Changes: Android.mk dropped (built by LineageOS kernel.mk); st21nfc_remove() returns void for the 6.1 i2c_driver API.
+
+Xiaomi/QTI compatibility (ST21NFC_XIAOMI_COMPAT, set in Kbuild; code in
+st21nfc_xiaomi.[ch] and "XIAOMI-COMPAT" blocks in st21nfc.c):
+  Donor: Xiaomi vendor tree, QTI vendor/st/opensource/driver (ST 2.2.0.19 + QTI)
+    https://github.com/sm6225-dev/kernel_xiaomi_sm6225-modules
+    branch 16, path st/opensource/driver, subtree commit
+    8f94cf63561d42a5a9a0fcebc63128cfcede2943 ("Add 'st/opensource/driver/' from
+    commit 'aaebe1dea410a80d187cbf57c9f433d07784ff9f'"), nfc/st21nfc.c blob 7cd9c29a
+  Licence: GPL-2.0-only (LICENSE.txt in the donor; QTI copyright
+    "Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc.")
+  Taken (behaviour active in the stock amethyst stm_nfc_i2c.ko): clkreq GPIO
+    made MPM wake-capable via msm_gpio_mpm_wake_set(); clk_get("nfc_ref_clk")
+    voting and ST21NFC_CLK_DISABLE_UNPREPARE removed; secure_zone state with
+    reset-line gating (always non-secure); probe log lines.
+  Not taken: NFC_SECURE_PERIPHERAL_ENABLED (smcinvoke/QTEE secure-zone query
+    and NFC_SECURE_ZONE handling), CONFIG_NFC_BOB1 (nvmem) and ST21NFC_ON_OFF;
+    none of them is present in the stock binary.
+  Cross-reference for the secure-zone code: https://github.com/xiaomi-8550-kernel/android_kernel_xiaomi_sm8550-modules
+    branch uvite, st/opensource/driver (2.2.0.15, smcinvoke unconditional).
+See docs/amethyst-drivers/nfc.md.
