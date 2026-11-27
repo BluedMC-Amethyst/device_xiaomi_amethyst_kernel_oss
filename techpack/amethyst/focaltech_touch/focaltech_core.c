@@ -37,6 +37,8 @@
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
 #include <linux/time.h>
 #include <linux/rtc.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
@@ -64,8 +66,8 @@
 struct fts_ts_data *fts_data;
 enum FTS_LOG_LEVEL debug_log_level = FTS_LOG_INFO;
 
-#define FOCALTECH_RX_NUM                    9
-#define FOCALTECH_TX_NUM                    14
+#define FOCALTECH_RX_NUM                    17 /* amethyst: stock value */
+#define FOCALTECH_TX_NUM                    38 /* amethyst: stock value */
 #define SUPER_RESOLUTION_FACOTR             100
 /*struct device_node *gf_spi_dp;*/
 
@@ -1712,15 +1714,14 @@ static int fts_input_pen_init(struct fts_ts_data *ts_data)
 
 static int fts_input_init(struct fts_ts_data *ts_data)
 {
-#if 0
+    /* amethyst: own input device (as stock), not register_xiaomi_input_dev() */
     int ret = 0;
     int key_num = 0;
     struct fts_ts_platform_data *pdata = ts_data->pdata;
-#endif
     struct input_dev *input_dev;
 
     FTS_FUNC_ENTER();
-#if 1
+#if 0
     input_dev = register_xiaomi_input_dev(TOUCH_ID, fts_get_x_resolution()*fts_get_super_resolution_factor() -1, fts_get_y_resolution()*fts_get_super_resolution_factor() -1, FOCAL_SEC);
     if (!input_dev) {
         FTS_ERROR("Failed to allocate memory for input device");
@@ -3642,6 +3643,15 @@ int fts_ic_fw_version(char *fw_version_buf)
 
 int fts_ic_self_test(char *type, int *result)
 {
+#if !FTS_TEST_EN
+	/*
+	 * amethyst: the FT3683G (FT5672-family) factory test is not ported and
+	 * the donor's FT3383 test would drive the wrong IC. Report "invalid".
+	 */
+	*result = 0;
+	FTS_ERROR("tp selftest (%s) not supported in this build", type);
+	return -EOPNOTSUPP;
+#else
 	int retval = 0;//0 invalid; 1 fail; 2 pass
 	bool rst_test_result = true;
 
@@ -3679,6 +3689,7 @@ int fts_ic_self_test(char *type, int *result)
 	}
 
 	return 0;
+#endif
 }
 
 int fts_resume_suspend(bool resume, u8 gesture_type)
@@ -3905,6 +3916,9 @@ int fts_thp_ic_write_interfaces(u8 addr, s32* value, int value_len)
         int i = 0;
         int index = 1;
         unsigned char *input_data=(char *)&value[1];
+        /* amethyst: bound the HAL-supplied length to writebuf */
+        if (value_len < 0 || value_len + 1 > sizeof(writebuf))
+            return -EINVAL;
         writebuf[0] = value[0] & 0xFF;
         /*analy_open_data(value,input_data);*/
         for (i = 0; i < value_len; i++) {
@@ -3917,6 +3931,9 @@ int fts_thp_ic_write_interfaces(u8 addr, s32* value, int value_len)
         for (i = 0; i < value_len+1; i++) {
             FTS_INFO("mode:3045, writebuf[i:%d]:%x", i, writebuf[i]);
         }
+        /* amethyst: no userspace path into the bootloader/flash */
+        if (!fts_user_write_allowed(writebuf, value_len + 1))
+            return -EPERM;
         return fts_write(writebuf, value_len + 1);
     } else {
         /*input = integer_conver(value);*/
@@ -4081,7 +4098,16 @@ void fts_init_hardware_param(void)
 	hardware_param.raw_data_page_size = 5;
 	hardware_param.raw_data_buf_size = 5;
 	memset(hardware_param.config_file_name, 0, 64);
-	memcpy(hardware_param.config_file_name, "pandora_focal_thp_config.ini", strlen("pandora_focal_thp_config.ini"));
+	/*
+	 * amethyst: stock picks the THP HAL config by lockdown bytes 0/1
+	 * ("qE" selects the _01 variant).
+	 */
+	if (fts_data->lockdown_info[0] == 0x71 && fts_data->lockdown_info[1] == 0x45)
+		strscpy(hardware_param.config_file_name, "o16u_fts_thp_config_01.ini",
+			sizeof(hardware_param.config_file_name));
+	else
+		strscpy(hardware_param.config_file_name, "o16u_fts_thp_config_00.ini",
+			sizeof(hardware_param.config_file_name));
 	memset(hardware_param.driver_version, 0, 64);
 	memcpy(hardware_param.driver_version, FOCAL_DRIVER_VERSION, strlen(FOCAL_DRIVER_VERSION));
 	/* save lockdown type: u8 */
@@ -4098,7 +4124,12 @@ void fts_init_xiaomi_touchfeature_v3(struct fts_ts_data *ts_data)
 	/* hardware_operation */
 	memset(&hardware_operation, 0, sizeof(hardware_operation_t));
 	hardware_operation.ic_self_test = fts_ic_self_test;
+#if FTS_TEST_EN
 	hardware_operation.ic_data_collect = fts_ic_data_collect;
+#else
+	/* amethyst: raw-data collection lives in the (unported) test library */
+	hardware_operation.ic_data_collect = NULL;
+#endif
 	hardware_operation.ic_get_lockdown_info = fts_lockdown_info_read;
 	hardware_operation.ic_get_fw_version = NULL;
 
@@ -4137,8 +4168,8 @@ void fts_init_xiaomi_touchfeature_v3(struct fts_ts_data *ts_data)
 	/* init struct touchmode for reg setting */
 	fts_init_touchmode_data(ts_data);
 	register_touch_panel(ts_data->dev, TOUCH_ID, &hardware_param, &hardware_operation);
-	xiaomi_register_panel_notifier(fts_data->dev, TOUCH_ID, PANEL_EVENT_NOTIFICATION_SECONDARY, 
-				PANEL_EVENT_NOTIFIER_CLIENT_SECONDARY_TOUCH);
+	xiaomi_register_panel_notifier(fts_data->dev, TOUCH_ID, PANEL_EVENT_NOTIFICATION_PRIMARY, /* amethyst: as stock */
+				PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH);
 #ifdef TOUCH_GESTURE_ALWAYSON_SUPPORT
 #ifndef CONFIG_TOUCH_FACTORY_BUILD
 	set_touch_mode(DATA_MODE_14, 1);
@@ -4358,11 +4389,9 @@ err_power_init:
 err_gpio_config:
 	kfree_safe(ts_data->touch_buf);
 err_buffer_init:
-#if 1
-	unregister_xiaomi_input_dev(TOUCH_ID);
-#else
+	/* amethyst: input device is our own (see fts_input_init) */
 	input_unregister_device(ts_data->input_dev);
-#endif
+	ts_data->input_dev = NULL;
 #if FTS_PEN_EN
 	input_unregister_device(ts_data->pen_dev);
 #endif
@@ -4629,6 +4658,8 @@ static int fts_ts_probe(struct spi_device *spi)
     if (ret) {
         FTS_ERROR("[DIS-TF-TOUCH] Touch Screen(SPI BUS) driver probe fail");
         kfree_safe(ts_data);
+        fts_data = NULL; /* amethyst: don't leave a dangling global */
+        spi_set_drvdata(spi, NULL);
         return ret;
     }
 
@@ -4646,6 +4677,8 @@ static void fts_ts_remove(struct spi_device *spi)
 	xiaomi_unregister_panel_notifier(ts_data->dev, TOUCH_ID);
 	unregister_touch_panel(TOUCH_ID);
     fts_ts_remove_entry(spi_get_drvdata(spi));
+	fts_data = NULL; /* amethyst: freed by fts_ts_remove_entry() */
+	spi_set_drvdata(spi, NULL);
 }
 
 static const struct spi_device_id fts_ts_id[] = {
@@ -4653,7 +4686,7 @@ static const struct spi_device_id fts_ts_id[] = {
     {},
 };
 static const struct of_device_id fts_dt_match[] = {
-    {.compatible = "focaltech,fts", },
+    {.compatible = "xiaomi,touch-spi", }, /* amethyst: shared with goodix_core */
     {},
 };
 MODULE_DEVICE_TABLE(of, fts_dt_match);
@@ -4672,23 +4705,84 @@ static struct spi_driver fts_ts_driver = {
     .id_table = fts_ts_id,
 };
 
-#define PANEL_ID_DET1 (344+139)
-#define PANEL_ID_DET2 (344+140)
+/*
+ * amethyst: panel/controller selection.
+ *
+ * Goodix (CSOT panel) and FocalTech (TianMa panel) share one DT node with
+ * compatible "xiaomi,touch-spi". Stock samples the panel-ID pins TLMM 139 and
+ * 140 at module init: [139,140] = [1,0] is CSOT + Goodix 9916R, [0,1] is
+ * TianMa + FocalTech FT3683G. Stock only registers the SPI driver for [0,1];
+ * otherwise the module loads but stays inert, so it can never take the SPI
+ * device from goodix_core. Stock used fixed legacy numbers 344+139/344+140;
+ * here the TLMM chip is looked up so a different GPIO base cannot make us
+ * read the wrong pins. If TLMM is not found the driver does not register.
+ */
+#define FTS_TLMM_COMPATIBLE	"qcom,volcano-pinctrl"
+#define FTS_PANEL_ID_PIN1	139
+#define FTS_PANEL_ID_PIN2	140
+
+static bool fts_driver_registered;
+
+static int fts_match_tlmm(struct gpio_chip *gc, void *data)
+{
+	return gc->parent && gc->parent->of_node &&
+	       of_device_is_compatible(gc->parent->of_node, FTS_TLMM_COMPATIBLE);
+}
+
+static int fts_read_panel_id_pin(int base, int pin)
+{
+	struct gpio_desc *desc = gpio_to_desc(base + pin);
+	int ret;
+
+	if (!desc)
+		return -ENODEV;
+	/* Not requested, as in stock: the pins belong to no driver. */
+	ret = gpiod_direction_input(desc);
+	if (ret)
+		return ret;
+	return gpiod_get_raw_value(desc);
+}
+
+static bool fts_panel_is_tianma_focal(void)
+{
+	struct gpio_chip *gc;
+	int id1, id2;
+
+	gc = gpiochip_find(NULL, fts_match_tlmm);
+	if (!gc) {
+		FTS_ERROR("TLMM (%s) not found, can't read panel id", FTS_TLMM_COMPATIBLE);
+		return false;
+	}
+
+	id1 = fts_read_panel_id_pin(gc->base, FTS_PANEL_ID_PIN1);
+	id2 = fts_read_panel_id_pin(gc->base, FTS_PANEL_ID_PIN2);
+	FTS_INFO("gpio_139 = %d, gpio_140 = %d (tlmm base %d)", id1, id2, gc->base);
+	return id1 == 0 && id2 == 1;
+}
 
 static int __init fts_ts_init(void)
 {
 	int ret = 0;
 	FTS_FUNC_ENTER();
+	if (!fts_panel_is_tianma_focal()) {
+		FTS_INFO("panel is not tianma, ic is not focal, return");
+		FTS_FUNC_EXIT();
+		return 0;
+	}
+	FTS_INFO("TP is focaltech, panel is TianMa!");
 	ret = spi_register_driver(&fts_ts_driver);
 	if (ret != 0)
 		FTS_ERROR("Focaltech touch screen driver init failed!");
+	else
+		fts_driver_registered = true;
 	FTS_FUNC_EXIT();
 	return ret;
 }
 
 static void __exit fts_ts_exit(void)
 {
-    spi_unregister_driver(&fts_ts_driver);
+    if (fts_driver_registered)
+        spi_unregister_driver(&fts_ts_driver);
 }
 
 module_init(fts_ts_init);

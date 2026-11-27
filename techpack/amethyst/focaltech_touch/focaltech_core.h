@@ -68,7 +68,8 @@
 #include <linux/time64.h>
 //#include <linux/string.h>
 #include "focaltech_common.h"
-#include "../../xiaomi/xiaomi_touch.h"
+#include "xiaomi_touch.h"
+#include "focaltech_amethyst_compat.h" /* amethyst */
 #include "./focaltech_test/focaltech_test_ini.h"
 
 /*****************************************************************************
@@ -102,8 +103,8 @@
 #define FTS_TOUCH_E_NUM                     1
 #define FTS_X_MIN_DISPLAY_DEFAULT           0
 #define FTS_Y_MIN_DISPLAY_DEFAULT           0
-#define FTS_X_MAX_DISPLAY_DEFAULT           904
-#define FTS_Y_MAX_DISPLAY_DEFAULT           572
+#define FTS_X_MAX_DISPLAY_DEFAULT           1220 /* amethyst: stock value */
+#define FTS_Y_MAX_DISPLAY_DEFAULT           2712 /* amethyst: stock value */
 
 #define FTS_TOUCH_DOWN                      0
 #define FTS_TOUCH_UP                        1
@@ -126,7 +127,7 @@
 #define FTS_FRAME_DATA_ADDR                 0x01
 #define TOUCH_DUMP_TIC_SUPPORT
 
-#define FOCAL_DRIVER_VERSION "FT3383-2025.07.04-01"
+#define FOCAL_DRIVER_VERSION "FT3683G-2025.02.20-01" /* amethyst: stock string */
 #define TX_NUM                              9
 #define RX_NUM                              14
 #define ROW_NUM_MAX                         20
@@ -160,7 +161,7 @@
 #define CRC32_POLYNOMIAL         0xE89061DB
 #define BIG_SMALL_CHANGE
 /*#define TOUCH_ID 0*/
-#define TOUCH_ID         (1)
+#define TOUCH_ID         (0) /* amethyst: primary panel, as stock */
 /*for global*/
 extern struct fts_test *fts_ftest;
 extern hardware_operation_t hardware_operation;
@@ -729,6 +730,7 @@ int fts_thp_ic_write_interfaces(u8 addr, s32* value, int value_len);
 int fts_reset_proc(int hdelayms);
 int fts_recover_after_reset(void);
 int fts_check_cid(struct fts_ts_data *ts_data, u8 id_h);
+bool fts_user_write_allowed(const u8 *buf, u32 len); /* amethyst */
 int fts_wait_tp_to_valid(void);
 void fts_release_all_finger(void);
 void fts_tp_state_recovery(struct fts_ts_data *ts_data);

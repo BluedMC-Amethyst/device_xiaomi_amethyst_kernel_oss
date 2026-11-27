@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# FocalTech FT3683G THP touch driver for amethyst (TianMa panel variant).
+# Ported from MiCode's popsicle-w-oss q200/focaltech_3383; see ORIGIN and
+# docs/amethyst-drivers/focaltech.md. Module name matches stock.
+
+focaltech_touch-y := focaltech_core.o focaltech_ex_fun.o focaltech_ex_mode.o \
+	focaltech_gesture.o focaltech_esdcheck.o \
+	focaltech_point_report_check.o focaltech_spi.o focaltech_flash_ro.o
+obj-m += focaltech_touch.o
+
+# xiaomi_touch is built in-tree (drivers/input/touchscreen/xiaomi); its
+# exports come from the kernel's own Module.symvers.
+ccflags-y += -I$(srctree)/drivers/input/touchscreen/xiaomi
+
+# These must equal the flags drivers/input/touchscreen/Makefile gives the
+# in-tree xiaomi_touch: TOUCH_FOD_SUPPORT adds members to
+# hardware_operation_t, which is passed to register_touch_panel().
+ccflags-y += -DTOUCH_FOD_SUPPORT -DTOUCH_THP_SUPPORT

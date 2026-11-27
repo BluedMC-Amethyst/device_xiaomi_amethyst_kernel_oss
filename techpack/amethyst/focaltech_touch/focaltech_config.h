@@ -184,7 +184,7 @@
 /*
  * choose your ic chip type of focaltech
  */
-#define FTS_CHIP_TYPE   _FT3383
+#define FTS_CHIP_TYPE   _FT3683G /* amethyst */
 
 /******************* Enables *********************/
 /*********** 1 to enable, 0 to disable ***********/
@@ -229,7 +229,7 @@
  * Host test enable
  * 1: enable, 0:disable(default)
  */
-#define FTS_TEST_EN                             1
+#define FTS_TEST_EN                             0 /* amethyst: FT3383 test not built */
 
 /*
  * Pinctrl enable
@@ -250,7 +250,7 @@
 /*
  * auto upgrade
  */
-#define FTS_AUTO_UPGRADE_EN                     1
+#define FTS_AUTO_UPGRADE_EN                     0 /* amethyst: flash writing disabled */
 
 /*
  * auto upgrade for lcd cfg

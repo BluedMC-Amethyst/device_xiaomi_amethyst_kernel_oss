@@ -151,6 +151,11 @@ static ssize_t fts_debug_write(
         break;
 
     case PROC_WRITE_REGISTER:
+        /* amethyst: no userspace path into the bootloader/flash */
+        if (!fts_user_write_allowed(writebuf + 1, 2)) {
+            ret = -EPERM;
+            goto proc_write_err;
+        }
         ret = fts_write_reg(writebuf[1], writebuf[2]);
         if (ret < 0) {
             FTS_ERROR("PROC_WRITE_REGISTER write error");
@@ -170,6 +175,11 @@ static ssize_t fts_debug_write(
 
     case PROC_WRITE_DATA:
         writelen = buflen - 1;
+        /* amethyst: no userspace path into the bootloader/flash */
+        if (!fts_user_write_allowed(writebuf + 1, writelen)) {
+            ret = -EPERM;
+            goto proc_write_err;
+        }
         ret = fts_write(writebuf + 1, writelen);
         if (ret < 0) {
             FTS_ERROR("PROC_WRITE_DATA write error");
@@ -218,6 +228,11 @@ static ssize_t fts_debug_write(
 
     case PROC_WRITE_DATA_DIRECT:
         writelen = buflen - 1;
+        /* amethyst: no userspace path into the bootloader/flash */
+        if (!fts_user_write_allowed(writebuf + 1, writelen)) {
+            ret = -EPERM;
+            goto proc_write_err;
+        }
         ret = fts_spi_transfer_direct(writebuf + 1, writelen, NULL, 0);
         if (ret < 0) {
             FTS_ERROR("PROC_WRITE_DATA_DIRECT write error");
@@ -1183,8 +1198,14 @@ static ssize_t fts_wr_reg_store(
                 u8 reg, val;
                 reg = rw_op.reg & 0xFF;
                 val = rw_op.val & 0xFF;
+                if (!fts_user_write_allowed(&reg, 1)) /* amethyst */
+                    rw_op.res = -EPERM;
+                else
                 rw_op.res = fts_write_reg(reg, val);
             } else {
+                if (!fts_user_write_allowed((u8 *)rw_op.opbuf, rw_op.len)) /* amethyst */
+                    rw_op.res = -EPERM;
+                else
                 rw_op.res = fts_write(rw_op.opbuf, rw_op.len);
             }
             if (rw_op.res < 0) {
@@ -1709,6 +1730,10 @@ static ssize_t fts_htc_cmd_store(
 
         } else {
             
+            /* amethyst: no userspace path into the bootloader/flash */
+            if (!fts_user_write_allowed((u8 *)htc_cmd_op.opbuf, htc_cmd_op.len))
+                htc_cmd_op.res = -EPERM;
+            else
             htc_cmd_op.res = fts_write(htc_cmd_op.opbuf, htc_cmd_op.len);
             
             if (htc_cmd_op.res < 0) {
