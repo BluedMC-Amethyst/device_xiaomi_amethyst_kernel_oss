@@ -209,6 +209,10 @@ struct aw_volume_desc {
 	unsigned int shift;
 	int init_volume;
 	int mute_volume;
+	/* attenuation requested through aw_dev_<ch>_volume (0.125 dB units) */
+	int ctl_volume;
+	/* attenuation requested by the monitor tables (0.125 dB units) */
+	int monitor_volume;
 };
 
 struct aw_voltage_desc {
@@ -273,6 +277,8 @@ struct aw_device {
 	unsigned int vol_step;
 	unsigned int re_max;
 	unsigned int re_min;
+	unsigned int fade_en;		/* DT fade-flag: stepped fade on (un)mute */
+	bool pll_check_disable;		/* DT pll-check-disable */
 
 	struct device *dev;
 	struct i2c_client *i2c;
@@ -334,6 +340,15 @@ int aw882xx_dev_prof_update(struct aw_device *aw_dev, bool force);
 int aw882xx_dev_get_cali_re(struct aw_device *aw_dev, int32_t *cali_re);
 int aw882xx_dev_init_cali_re(struct aw_device *aw_dev);
 int aw882xx_dev_dc_status(struct aw_device *aw_dev);
+
+/*volume*/
+int aw882xx_dev_set_volume(struct aw_device *aw_dev, unsigned int set_vol);
+int aw882xx_dev_get_volume(struct aw_device *aw_dev, unsigned int *get_vol);
+int aw882xx_dev_apply_volume(struct aw_device *aw_dev);
+
+/*hal monitor*/
+int aw882xx_dev_monitor_hal_get_time(struct aw_device *aw_dev, uint32_t *time);
+int aw882xx_dev_monitor_hal_work(struct aw_device *aw_dev, uint32_t *vmax);
 
 /*interrupt*/
 int aw882xx_dev_status(struct aw_device *aw_dev);

@@ -98,22 +98,31 @@ extern int aw_send_afe_cal_apr(uint32_t param_id,
 extern int aw_send_afe_rx_module_enable(void *buf, int size);
 extern int aw_send_afe_tx_module_enable(void *buf, int size);
 #else
+/*
+ * No kernel DSP transport. On AudioReach (volcano) the Awinic speaker
+ * protection module lives in the ADSP graph and is configured from
+ * userspace: ACDB data through AGM, and PAL/libawcal for calibration and
+ * monitor messages. Stock builds without a transport too, but its stubs
+ * report success and hand back uninitialised buffers. Here every access
+ * fails with -EOPNOTSUPP so no caller uses data that was never read.
+ */
+#define AW_DSP_NO_TRANSPORT
 static int aw_send_afe_cal_apr(uint32_t param_id,
 	void *buf, int cmd_size, bool write)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 static int aw_send_afe_rx_module_enable(void *buf, int size)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 static int aw_send_afe_tx_module_enable(void *buf, int size)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 static int afe_get_topology(int port_id)
 {
-	return 0;
+	return -EOPNOTSUPP;
 }
 
 #endif
@@ -166,7 +175,8 @@ static int aw_adm_param_enable(int port_id, int module_id, int param_id, int ena
 				__func__, module_id, INSTANCE_ID_0, enable, rc);
 	return rc;
 #endif
-	return 0;
+	/* no ADM/COPP interface on AudioReach */
+	return -EOPNOTSUPP;
 }
 
 static int aw_get_msg_num(int dev_ch, int *msg_num)
@@ -342,6 +352,10 @@ static int aw_afe_get_topology(uint32_t param_id)
 static void aw_check_dsp_ready(uint32_t param_id)
 {
 	int ret;
+
+#ifdef AW_DSP_NO_TRANSPORT
+	return;
+#endif
 
 	ret = aw_afe_get_topology(param_id);
 
@@ -1146,7 +1160,7 @@ int aw882xx_dsp_set_copp_module_en(bool enable)
 	ret = aw_adm_param_enable(g_rx_port_id, AW_COPP_MODULE_ID,
 			AW_COPP_PARAMS_ID_AWDSP_ENABLE, enable);
 	if (ret)
-		return -EINVAL;
+		return ret;
 
 	aw_pr_info("set skt %s", enable == 1 ? "enable" : "disable");
 	return 0;

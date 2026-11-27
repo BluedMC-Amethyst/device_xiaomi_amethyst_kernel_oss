@@ -366,36 +366,22 @@ static void aw_monitor_set_gain(struct aw_device *aw_dev, uint16_t gain)
 {
 	int ret;
 	struct aw_monitor_cfg *monitor_cfg = &aw_dev->monitor_desc.monitor_cfg;
-	unsigned int read_volume;
-	unsigned int set_volume;
+	struct aw_volume_desc *vol_desc = &aw_dev->volume_desc;
 
 	if (gain == GAIN_NONE || (!monitor_cfg->gain_switch))
 		return;
 
-	ret = aw_dev->ops.aw_get_volume(aw_dev, &read_volume);
-	if (ret < 0) {
-		aw_dev_err(aw_dev->dev, "read volume failed");
-		return;
-	}
+	/* table gain is in register format; keep it as an attenuation in dB steps */
+	vol_desc->monitor_volume = aw_dev->ops.aw_reg_val_to_db(gain);
 
-	gain = aw_dev->ops.aw_reg_val_to_db(gain);
-
-	/*add offset*/
-	set_volume = gain + aw_dev->volume_desc.init_volume;
-
-	if (read_volume == set_volume) {
-		aw_dev_dbg(aw_dev->dev, "gain = 0x%x, no change", read_volume);
-		return;
-	}
-
-	ret = aw_dev->ops.aw_set_volume(aw_dev, set_volume);
+	/* stock: hardware gets max(user attenuation, monitor attenuation) */
+	ret = aw882xx_dev_apply_volume(aw_dev);
 	if (ret < 0) {
 		aw_dev_err(aw_dev->dev, "set gain failed");
 		return;
 	}
-	aw_dev_info(aw_dev->dev, "set reg val = 0x%x, gain = 0x%x",
-				set_volume, gain);
-
+	aw_dev_dbg(aw_dev->dev, "monitor gain 0x%x -> attenuation %d, user %d",
+			gain, vol_desc->monitor_volume, vol_desc->ctl_volume);
 }
 
 static void aw_monitor_set_vmax(struct aw_device *aw_dev,
@@ -410,6 +396,12 @@ static void aw_monitor_set_vmax(struct aw_device *aw_dev,
 	if ((vmax == aw_dev->monitor_desc.pre_vmax) &&
 		(aw_dev->monitor_desc.first_entry != AW_FIRST_ENTRY)) {
 		aw_dev_dbg(aw_dev->dev, "vmax = 0x%x, no change", vmax);
+		return;
+	}
+
+	if (aw_dev->monitor_desc.hal_mode) {
+		/* the HAL reads it through aw_dev_<ch>_hal_mon_work */
+		aw_dev->monitor_desc.pre_vmax = vmax;
 		return;
 	}
 
@@ -494,8 +486,10 @@ static void aw_monitor_work_func(struct work_struct *work)
 		monitor_cfg->monitor_switch) {
 		if (!aw_get_hmute(aw_dev)) {
 			aw_monitor_work(aw_dev);
-			queue_delayed_work(aw882xx->work_queue,
-				&monitor->delay_work, msecs_to_jiffies(monitor_cfg->monitor_time));
+			if (!monitor->hal_mode)
+				queue_delayed_work(aw882xx->work_queue,
+					&monitor->delay_work,
+					msecs_to_jiffies(monitor_cfg->monitor_time));
 		}
 	}
 }
@@ -540,7 +534,10 @@ void aw882xx_monitor_start(struct aw_monitor_desc *monitor_desc)
 		return;
 	}
 
-	queue_delayed_work(aw882xx->work_queue,
+	monitor_desc->running = 1;
+	/* in hal mode the HAL drives each cycle via aw_dev_<ch>_hal_mon_work */
+	if (!monitor_desc->hal_mode)
+		queue_delayed_work(aw882xx->work_queue,
 				&monitor_desc->delay_work, 0);
 }
 
@@ -550,6 +547,7 @@ int aw882xx_monitor_stop(struct aw_monitor_desc *monitor_desc)
 			struct aw_device, monitor_desc);
 
 	aw_dev_info(aw_dev->dev, "enter");
+	monitor_desc->running = 0;
 	if (delayed_work_pending(&monitor_desc->delay_work))
 		cancel_delayed_work_sync(&monitor_desc->delay_work);
 
@@ -1205,6 +1203,7 @@ static struct attribute_group aw_monitor_attr_group = {
 void aw882xx_monitor_init(struct aw_monitor_desc *monitor_desc)
 {
 	int ret;
+	const char *mode_str = NULL;
 	struct aw_device *aw_dev = container_of(monitor_desc,
 				struct aw_device, monitor_desc);
 
@@ -1213,6 +1212,19 @@ void aw882xx_monitor_init(struct aw_monitor_desc *monitor_desc)
 	monitor_desc->test_vol = 0;
 	monitor_desc->test_temp = 0;
 #endif
+
+	monitor_desc->hal_mode = 0;
+	monitor_desc->running = 0;
+	if (!of_property_read_string(aw_dev->dev->of_node, "monitor-mode",
+					&mode_str)) {
+		/* stock: only "hal_monitor" selects hal mode; anything else is kernel */
+		if (!strcmp(mode_str, "hal_monitor"))
+			monitor_desc->hal_mode = 1;
+		aw_dev_info(aw_dev->dev, "read monitor-mode value is : %d",
+				monitor_desc->hal_mode);
+	} else {
+		aw_dev_info(aw_dev->dev, "use default monitor mode");
+	}
 
 	INIT_DELAYED_WORK(&monitor_desc->delay_work, aw_monitor_work_func);
 
@@ -1232,3 +1244,25 @@ void aw882xx_monitor_deinit(struct aw_monitor_desc *monitor_desc)
 	sysfs_remove_group(&aw_dev->dev->kobj, &aw_monitor_attr_group);
 }
 
+
+void aw882xx_monitor_hal_get_time(struct aw_monitor_desc *monitor_desc,
+				uint32_t *time)
+{
+	*time = monitor_desc->monitor_cfg.monitor_time;
+}
+
+/*
+ * One HAL-driven monitor cycle (stock behaviour): only in hal mode and while
+ * the amp is running; reports the vmax for the HAL to pass to the ADSP, or
+ * 0xffffffff when nothing ran.
+ */
+void aw882xx_monitor_hal_work(struct aw_monitor_desc *monitor_desc,
+				uint32_t *vmax)
+{
+	if (monitor_desc->hal_mode && monitor_desc->running) {
+		aw_monitor_work_func(&monitor_desc->delay_work.work);
+		*vmax = monitor_desc->pre_vmax;
+	} else {
+		*vmax = VMAX_NONE;
+	}
+}
