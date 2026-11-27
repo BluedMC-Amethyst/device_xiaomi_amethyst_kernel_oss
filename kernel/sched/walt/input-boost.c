@@ -49,12 +49,14 @@ static DEFINE_PER_CPU(struct cpu_sync, sync_info);
 static struct workqueue_struct *input_boost_wq;
 
 static struct work_struct input_boost_work;
+static struct work_struct powerkey_input_boost_work;
 
 static bool sched_boost_active;
 
 static struct delayed_work input_boost_rem;
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
+static u64 powerkey_boost_end;
 
 static DEFINE_PER_CPU(struct freq_qos_request, qos_req);
 
@@ -126,7 +128,7 @@ static void do_input_boost_rem(struct work_struct *work)
 	}
 }
 
-static void do_input_boost(struct work_struct *work)
+static void __do_input_boost(const unsigned int *freq, unsigned int ms)
 {
 	unsigned int i, ret;
 	struct cpu_sync *i_sync_info;
@@ -141,7 +143,7 @@ static void do_input_boost(struct work_struct *work)
 	pr_debug("Setting input boost min for all CPUs\n");
 	for (i = 0; i < 8; i++) {
 		i_sync_info = &per_cpu(sync_info, i);
-		i_sync_info->input_boost_min = sysctl_input_boost_freq[i];
+		i_sync_info->input_boost_min = freq[i];
 	}
 
 	/* Update policies for all online CPUs */
@@ -157,26 +159,56 @@ static void do_input_boost(struct work_struct *work)
 	}
 
 	queue_delayed_work(input_boost_wq, &input_boost_rem,
-					msecs_to_jiffies(sysctl_input_boost_ms));
+					msecs_to_jiffies(ms));
+}
+
+static void do_input_boost(struct work_struct *work)
+{
+	__do_input_boost(sysctl_input_boost_freq, sysctl_input_boost_ms);
+}
+
+/*
+ * Stock (Xiaomi) WALT boosts harder and longer on a power key press so the
+ * screen wakes quickly; the device post_boot script sets
+ * /proc/sys/walt/input_boost/powerkey_input_boost_{freq,ms}.
+ */
+static void do_powerkey_input_boost(struct work_struct *work)
+{
+	__do_input_boost(sysctl_powerkey_input_boost_freq,
+			 sysctl_powerkey_input_boost_ms);
+}
+
+static bool boost_freq_set(const unsigned int *freq)
+{
+	int cpu;
+
+	for (cpu = 0; cpu < 8; cpu++)
+		if (freq[cpu] > 0)
+			return true;
+	return false;
 }
 
 static void inputboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
-	u64 now;
-	int cpu;
-	int enabled = 0;
+	u64 now = ktime_to_us(ktime_get());
 
-	for_each_possible_cpu(cpu) {
-		if (sysctl_input_boost_freq[cpu] > 0) {
-			enabled = 1;
-			break;
-		}
+	if (type == EV_KEY && code == KEY_POWER && value == 1 &&
+	    boost_freq_set(sysctl_powerkey_input_boost_freq)) {
+		queue_work(input_boost_wq, &powerkey_input_boost_work);
+		last_input_time = now;
+		powerkey_boost_end = now +
+			(u64)sysctl_powerkey_input_boost_ms * USEC_PER_MSEC;
+		return;
 	}
-	if (!enabled)
+
+	if (!boost_freq_set(sysctl_input_boost_freq))
 		return;
 
-	now = ktime_to_us(ktime_get());
+	/* don't cut a running power key boost short with the lower one */
+	if (now < powerkey_boost_end)
+		return;
+
 	if (now - last_input_time < MIN_INPUT_INTERVAL)
 		return;
 
@@ -273,6 +305,7 @@ int input_boost_init(void)
 		return -EFAULT;
 
 	INIT_WORK(&input_boost_work, do_input_boost);
+	INIT_WORK(&powerkey_input_boost_work, do_powerkey_input_boost);
 	INIT_DELAYED_WORK(&input_boost_rem, do_input_boost_rem);
 
 	for_each_possible_cpu(cpu) {
