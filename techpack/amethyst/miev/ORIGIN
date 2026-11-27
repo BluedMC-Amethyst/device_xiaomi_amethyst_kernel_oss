@@ -15,6 +15,9 @@ Match with stock amethyst miev.ko (OS3.0.306.0, vendor_boot):
   The older MiCode copy (Xiaomi_Kernel_OpenSource socrates-t-oss,
   drivers/staging/miev) uses a linked-list payload layout and was not used.
 
-Changes: none to the C sources or headers. Kbuild and Makefile replace the
+Changes: one line in midevice.c (see below); none to the headers. Kbuild and Makefile replace the
 release's Kconfig/Makefile. Kbuild defines CONFIG_MIEV_MODULE=1 so that
 include/miev/mievent.h exposes the real prototypes.
+
+midevice.c returns -ENOMEM when a work buffer allocation fails; upstream
+returned 0 after freeing everything.

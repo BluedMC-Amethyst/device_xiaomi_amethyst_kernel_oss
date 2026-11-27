@@ -381,6 +381,7 @@ static int __init miev_init_module(void)
 		miev_works[i].msg = kmalloc(BUF_MAX_SIZE, GFP_KERNEL);
 		pr_debug("i=%d,p_wk=%p,msg=%p", i, &miev_works[i], miev_works[i].msg);
 		if (miev_works[i].msg == NULL) {
+			ret = -ENOMEM;
 			goto err_mem_alloc;
 		}
 		INIT_WORK(&miev_works[i].wk, do_miev_work);
