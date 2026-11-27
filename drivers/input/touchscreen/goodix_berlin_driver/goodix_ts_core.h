@@ -84,7 +84,7 @@
 #define CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI
 #define TIC_RAW_DATA_ADDR				0x11A34
 #define TIC_BASE_DATA_ADDR				0x13618
-#define GOODIX_TIC_RAW_SIZE				20 * 40 * 2
+#define GOODIX_TIC_RAW_SIZE				(20 * 40 * 2)
 
 #define PANEL_ORIENTATION_DEGREE_0	0	/* normal portrait orientation */
 #define PANEL_ORIENTATION_DEGREE_90	1	/* anticlockwise 90 degrees */
@@ -536,17 +536,23 @@ struct goodix_pen_data {
 };
 
 #ifdef TOUCH_THP_SUPPORT
+/*
+ * amethyst: stock layout (goodix_core.ko BTF, struct tp_frame, 5728 bytes):
+ * thp_frame[2500] at 24, dump_type at 2524, tic_raw at 2528, tic_base at
+ * 4128. The THP HAL reads dump_type at frame offset 0x9dc and the TIC block
+ * at 0x9e0 (libtouchreport_hal.so 0x1f42c/0x1f470), so this layout is ABI.
+ * The Warsaw donor's 4096-byte thp_frame moved dump_type to 4120.
+ */
 struct tp_frame {
 	long time_ns;
 	unsigned long frame_cnt;
 	int fod_pressed;
 	int fod_trackingId;
-//For P12X fw report diffdata
-#ifdef TOUCH_DUMP_TIC_SUPPORT
-	u8 thp_frame[GOODIX_THP_FRAME_DUMP_SIZE];
-	int dump_type;
-#else
 	u8 thp_frame[GOODIX_THP_FRAME_SIZE];
+#ifdef TOUCH_DUMP_TIC_SUPPORT
+	int dump_type;
+	u8 tic_raw[GOODIX_TIC_RAW_SIZE];
+	u8 tic_base[GOODIX_TIC_RAW_SIZE];
 #endif
 };
 #endif
@@ -1008,6 +1014,7 @@ int goodix_normalize_coeffi_update(struct goodix_ts_core *cd);
 #endif
 int goodix_htc_update_idle_baseline(void);
 int goodix_htc_set_active_scan_rate(int scan_rate);
+int goodix_htc_set_game_mode(int on);
 int goodix_get_tx_num(void);
 int goodix_get_rx_num(void);
 int goodix_get_freq_num(void);

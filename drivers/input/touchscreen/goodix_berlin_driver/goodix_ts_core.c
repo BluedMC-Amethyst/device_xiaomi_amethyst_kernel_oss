@@ -2045,11 +2045,20 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	__set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 #endif
 
-	/* set input parameters */
+	/*
+	 * set input parameters
+	 *
+	 * amethyst: stock reports panel_max - 1 (goodix_ts_stage2_init 0x2f0c,
+	 * 0x2f2c). This is ABI: libtouchreport_hal.so (find_touch_device,
+	 * 0x18fc8..0x190ac) injects the THP touches into the input device whose
+	 * ABS_MT_POSITION_X/Y maximum equals x_resolution * factor - 1 and
+	 * y_resolution * factor - 1 from hardware_param. With panel_max the HAL
+	 * finds no device and no touch is ever reported.
+	 */
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
-				0, ts_bdata->panel_max_x, 0, 0);
+				0, ts_bdata->panel_max_x - 1, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
-				0, ts_bdata->panel_max_y, 0, 0);
+				0, ts_bdata->panel_max_y - 1, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
 				0, ts_bdata->panel_max_w, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR,
@@ -2897,22 +2906,23 @@ static int goodix_generic_noti_callback(struct notifier_block *self,
 }
 
 #ifdef TOUCH_THP_SUPPORT
+/*
+ * amethyst: stock goodix_set_fod_downup (0xed78) only forwards the HAL's FOD
+ * state to xiaomi_touch and clears fod_finger on up. It does not inject
+ * BTN_INFO/WIDTH events into goodix_ts, which the THP HAL owns.
+ */
 static void goodix_set_fod_downup(struct goodix_ts_core *cd, int enable)
 {
 	if (enable) {
 		ts_info("ts fod down");
-		goodix_core_data->fod_finger = true;
-		input_report_key(cd->input_dev, BTN_INFO, 1);
 		update_fod_press_status(1);
-		input_sync(cd->input_dev);
 	} else {
 		ts_info("ts fod up");
-		goodix_core_data->fod_finger = false;
-		input_report_key(cd->input_dev, BTN_INFO, 0);
-		input_report_abs(cd->input_dev, ABS_MT_WIDTH_MAJOR, 0);
-		input_report_abs(cd->input_dev, ABS_MT_WIDTH_MINOR, 0);
 		update_fod_press_status(0);
-		input_sync(cd->input_dev);
+		if (cd->fod_finger) {
+			ts_info("clear fod finger");
+			cd->fod_finger = false;
+		}
 	}
 }
 
@@ -3646,17 +3656,19 @@ void goodix_game_mode_update(long mode_update_flag, int mode_value[Touch_Mode_NU
 	}
 
 #ifdef TOUCH_THP_SUPPORT
+	/*
+	 * amethyst: stock sends the THP game mode command here
+	 * (goodix_game_mode_update 0x44d8..0x4580); the Warsaw donor had it
+	 * commented out for its P11 firmware.
+	 */
 	if (goodix_core_data->enable_touch_raw) {
-		// not for P11,不用先使能游戏模式再切报点率
-		// mutex_lock(&goodix_core_data->core_mutex);
-		// temp_value = driver_get_touch_mode(TOUCH_ID, Touch_Game_Mode);
-		// ts_info("game mode status: %s   %d", temp_value ? "ON" : "OFF", temp_value);
-	
-		// ret = goodix_htc_set_game_mode(temp_value);
-		// if (ret < 0) {
-		// 	ts_info("failed to send game mode: %d, ret=%d", temp_value, ret);
-		// }
-		// mutex_unlock(&goodix_core_data->core_mutex);
+		mutex_lock(&goodix_core_data->core_mutex);
+		temp_value = driver_get_touch_mode(TOUCH_ID, Touch_Game_Mode);
+		ts_info("game mode status: %s   %d", temp_value ? "ON" : "OFF", temp_value);
+		ret = goodix_htc_set_game_mode(temp_value);
+		if (ret < 0)
+			ts_info("failed to send game mode: %d, ret=%d", temp_value, ret);
+		mutex_unlock(&goodix_core_data->core_mutex);
 		return;
 	}
 #endif
@@ -3852,9 +3864,9 @@ static void goodix_set_cur_value(int mode, int *value)
 			schedule_delayed_work(&goodix_core_data->thp_signal_work, 1 * HZ);
 			break;
 		case THP_HAL_REPORT_RATE:
+			/* amethyst: stock only records it (goodix_set_cur_value 0xbd1c) */
 			ts_info("set report rate: %d", gtp_value);
 			goodix_core_data->report_rate = gtp_value;
-			goodix_htc_set_active_scan_rate(gtp_value);
 			break;
 		case THP_NORMALIZE_STUDY_SCAN:
 			goodix_htc_start_calibration();
@@ -3867,7 +3879,9 @@ static void goodix_set_cur_value(int mode, int *value)
 			break;
 #if defined(TOUCH_THP_SUPPORT) && defined(TOUCH_DUMP_TIC_SUPPORT)
 		case Touch_THP_Dump:
-			if ((gtp_value == DUMP_OFF || gtp_value == DUMP_ON) && goodix_core_data->dump_type != gtp_value) {
+			/* amethyst: stock also accepts DUMP_BASE (0xbd40..0xbdb8) */
+			if ((gtp_value == DUMP_OFF || gtp_value == DUMP_ON || gtp_value == DUMP_BASE) &&
+					goodix_core_data->dump_type != gtp_value) {
 				ts_debug("change dump state(%d) as %d",
 					goodix_core_data->dump_type, gtp_value);
 				goodix_core_data->dump_type = gtp_value;
@@ -3878,9 +3892,14 @@ static void goodix_set_cur_value(int mode, int *value)
 		case THP_IDLE_THD:
 			goodix_htc_set_idle_threshold(gtp_value);
 			break;
-		case THP_GLOVE_STATUS:
-			goodix_htc_enter_glove(value);
-			break;
+		/*
+		 * amethyst: stock has no THP_GLOVE_STATUS, THP_HAL_IDLE_RATE,
+		 * THP_REF_HOPPING_SET or THP_HAL_DISPLAY_FPS handling (the jump
+		 * table at .rodata+0x13894 sends 1012 and 1092 to the default
+		 * case, and 1111/1113 are not in its enum). The Warsaw commands
+		 * for them (0x2A display FPS etc.) are not sent to the O16U
+		 * firmware.
+		 */
 		case THP_IC_FREQ_HOPPING:
 			goodix_htc_set_freq_hopping(gtp_value);
 			break;
@@ -3895,37 +3914,6 @@ static void goodix_set_cur_value(int mode, int *value)
 			break;
 		case THP_IC_GESTRUE_FEEDBACK:
 			goodix_htc_set_gesture_feedback(gtp_value);
-			break;
-		case THP_HAL_IDLE_RATE:
-			//默认应用up之后,thp下发5s 240hz idle 先强制写死,后续同THP修改参数
-			//cmd 00 00 09 9F 05 47 10 32 00 36 01（10 47是前段刷新率4167<单位 1us>，00 32是保持50<单位 100ms>，01 36是校验和）
-			if (gtp_value == 240) {
-				value[0] = 1;
-				value[1] = 4167;
-				value[2] = 50;
-				goodix_htc_enter_idle(&value[0]);
-			} else {
-				ts_info("not set to ic");
-			}
-			break;
-		case THP_REF_HOPPING_SET:
-			goodix_htc_ref_hopping_set(value);
-			break;
-		case THP_HAL_DISPLAY_FPS:
-			if (gtp_value <= 125) {
-				gtp_value = 120;
-			} else if (gtp_value <= 149) {
-				gtp_value = 144;
-			} else if (gtp_value <= 170) {
-				gtp_value = 165;
-			} else {
-				gtp_value = 120;
-			}
-			if (gtp_value != goodix_core_data->fps_value) {
-				ts_info("fps %d change to %d ",goodix_core_data->fps_value, gtp_value);
-				goodix_core_data->fps_value = gtp_value;
-				goodix_htc_set_display_fps(gtp_value);
-			}
 			break;
 		default:
 			ts_err("not support mode, mode(%d)!", gtp_mode);
@@ -4301,8 +4289,21 @@ upgrade:
 #ifdef GOODIX_XIAOMI_TOUCHFEATURE
 
 	goodix_core_data->sync_mode = DIFF_AUTO_SYNC;  //AUTO_SYNC
-	hardware_param.x_resolution = goodix_get_x_resolution();
-	hardware_param.y_resolution = goodix_get_y_resolution();
+	/*
+	 * amethyst: stock fills the THP resolution with constants, 1220 x 2712
+	 * (goodix_start_later_init 0xa688, 0x0a9804c4), not with the IC info
+	 * panel size. That equals the DT panel-max divided by the super
+	 * resolution factor (122000 / 100, 271200 / 100); derive it from the DT
+	 * so the HAL's device match (panel_max - 1, above) holds by
+	 * construction.
+	 */
+	if (ts_bdata->super_resolution_factor) {
+		hardware_param.x_resolution = ts_bdata->panel_max_x / ts_bdata->super_resolution_factor;
+		hardware_param.y_resolution = ts_bdata->panel_max_y / ts_bdata->super_resolution_factor;
+	} else {
+		hardware_param.x_resolution = goodix_get_x_resolution();
+		hardware_param.y_resolution = goodix_get_y_resolution();
+	}
 	hardware_param.rx_num = (u16) goodix_get_rx_num();
 	hardware_param.tx_num = (u16) goodix_get_tx_num();
 	hardware_param.super_resolution_factor = ts_bdata->super_resolution_factor;

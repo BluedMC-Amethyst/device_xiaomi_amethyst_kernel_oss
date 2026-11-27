@@ -1521,6 +1521,47 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 	return 0;
 }
 
+#ifdef TOUCH_THP_SUPPORT
+/*
+ * amethyst: reconstructed from stock goodix_core.ko goodix_htc_dump_tic
+ * (0xfa20). Called for every THP frame, after the 2500-byte frame read.
+ * It mirrors the current dump state into the frame header, which the HAL
+ * reads at offset 0x9dc (libtouchreport_hal.so copy_frame_data_from_mmap,
+ * 0x1f42c), and appends the TIC raw block (and once, for DUMP_BASE, the TIC
+ * base block) when a dump was requested through Touch_THP_Dump.
+ */
+static int goodix_htc_dump_tic(struct goodix_ts_core *cd, struct tp_frame *tp_frame)
+{
+	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
+	int ret;
+
+	tp_frame->dump_type = cd->dump_type;
+	memset(tp_frame->tic_raw, 0, sizeof(tp_frame->tic_raw));
+	memset(tp_frame->tic_base, 0, sizeof(tp_frame->tic_base));
+	if (!cd->enable_touch_raw || cd->dump_type == DUMP_OFF)
+		return 0;
+
+	ret = hw_ops->read(cd, TIC_RAW_DATA_ADDR, tp_frame->tic_raw,
+			sizeof(tp_frame->tic_raw));
+	if (ret) {
+		ts_err("failed read tic raw data, ret %d", ret);
+		return -EINVAL;
+	}
+
+	if (cd->dump_type == DUMP_BASE) {
+		ret = hw_ops->read(cd, TIC_BASE_DATA_ADDR, tp_frame->tic_base,
+				sizeof(tp_frame->tic_base));
+		if (ret) {
+			ts_err("failed read tic base data, ret %d", ret);
+			return -EINVAL;
+		}
+		cd->dump_type = DUMP_ON;
+	}
+
+	return 0;
+}
+#endif
+
 static int brl_event_handler(struct goodix_ts_core *cd,
 			struct goodix_ts_event *ts_event)
 {
@@ -1546,16 +1587,8 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 #ifdef GOODIX_DEBUG_SPI
 		TOUCH_TRACE_FRAME_CNT_BEGIN(frame_cnt, frame_cnt - 1);
 #endif
-#ifdef TOUCH_DUMP_TIC_SUPPORT
-		tp_frame->dump_type = cd->dump_type;
-		if (cd->dump_type == DUMP_ON) {
-			ret = hw_ops->read(cd, misc->frame_data_addr, tp_frame->thp_frame, GOODIX_THP_FRAME_DUMP_SIZE);
-		} else {
-			ret = hw_ops->read(cd, misc->frame_data_addr, tp_frame->thp_frame, GOODIX_THP_FRAME_SIZE);
-		}
-#else
+		/* amethyst: stock always reads 2500 bytes (brl_event_handler 0x15ef0) */
 		ret = hw_ops->read(cd, misc->frame_data_addr, tp_frame->thp_frame, GOODIX_THP_FRAME_SIZE);
-#endif /* TOUCH_DUMP_TIC_SUPPORT */
 		if (ret) {
 			ts_err("failed get frame data");
 #ifdef GOODIX_DEBUG_SPI
@@ -1575,6 +1608,9 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 			ts_event->event_type = EVENT_FRAME;
 			tp_frame->frame_cnt = frame_cnt;
 			tp_frame->fod_pressed = cd->fod_finger;
+#ifdef TOUCH_DUMP_TIC_SUPPORT
+			goodix_htc_dump_tic(cd, tp_frame);
+#endif
 			notify_raw_data_update(TOUCH_ID);
 			rtc_time64_to_tm(ts.tv_sec, &tm);
 			frame_cnt++;
@@ -2059,9 +2095,21 @@ static int brl_game(struct goodix_ts_core *cd, u8 data0, u8 data1, bool on)
 	enable thp frame data report THP4.0
 	enable 00 00 06 90 02 01 99 00
 	unable 00 00 06 90 02 00 98 00
+
+	amethyst: the O16U firmware (stock driver gt9916-2025.02.20-01) takes
+	the older single-byte form, 00 00 05 90 <mode>, where <mode> encodes the
+	sync mode (NO_SYNC 0x01, AUTO_SYNC 0x11, SYNC 0x81, DIFF_AUTO_SYNC 0x18)
+	and 0x00 disables frame output. Reconstructed from stock goodix_core.ko
+	goodix_htc_enable (0xf4e8..0xf548, constant 0x18811101).
 */
 static int goodix_htc_enable_touch_raw(int en)
 {
+	static const u8 frame_mode[] = {
+		[NO_SYNC] = 0x01,
+		[AUTO_SYNC] = 0x11,
+		[SYNC] = 0x81,
+		[DIFF_AUTO_SYNC] = 0x18,
+	};
 	struct goodix_ts_hw_ops *hw_ops;
 	struct goodix_ts_cmd raw_cmd;
 	int ret;
@@ -2070,14 +2118,11 @@ static int goodix_htc_enable_touch_raw(int en)
 	if (!goodix_core_data)
 		return -EINVAL;
 	hw_ops = goodix_core_data->hw_ops;
+	memset(&raw_cmd, 0, sizeof(raw_cmd));
 	raw_cmd.cmd = GOODIX_CMD_FRAMEDATA;
-	raw_cmd.data[0] = 0x02;
-	if (en) {
-		raw_cmd.data[1] = 0x01; //diff
-	} else {
-		raw_cmd.data[1] = 0x00;
-	}
-	raw_cmd.len = 6;
+	if (en && goodix_core_data->sync_mode < ARRAY_SIZE(frame_mode))
+		raw_cmd.data[0] = frame_mode[goodix_core_data->sync_mode];
+	raw_cmd.len = 5;
 	ret = hw_ops->send_cmd(goodix_core_data, &raw_cmd);
 	if (ret)
 		ts_err("failed send rawdata cmd %d, ret %d", en, ret);
@@ -2323,6 +2368,32 @@ int goodix_htc_ref_hopping_set(int *value) {
  *
  * return: 0 on success, otherwise return < 0.
  */
+/*
+ * set THP game mode.
+ *
+ * amethyst: reconstructed from stock goodix_core.ko goodix_htc_set_game_mode
+ * (0x10a0c): 00 00 05 C2 <on>. Stock goodix_game_mode_update sends it when
+ * the IC reports THP frames.
+ */
+#define GOODIX_CMD_GAME_MODE 0xC2
+int goodix_htc_set_game_mode(int on)
+{
+	struct goodix_ts_hw_ops *hw_ops;
+	struct goodix_ts_cmd tmp_cmd;
+	int ret;
+
+	if (!goodix_core_data)
+		return -EINVAL;
+	hw_ops = goodix_core_data->hw_ops;
+	tmp_cmd.cmd = GOODIX_CMD_GAME_MODE;
+	tmp_cmd.data[0] = (u8)on;
+	tmp_cmd.len = 5;
+	ret = hw_ops->send_cmd(goodix_core_data, &tmp_cmd);
+	ts_info("%s send game mode cmd %d, ret %d", ret ? "failed" : "success", on, ret);
+
+	return ret;
+}
+
 #define GOODIX_CMD_UPDATE_IDLE_BASELINE 0xA2
 int goodix_htc_update_idle_baseline(void)
 {
@@ -2351,37 +2422,20 @@ int goodix_htc_update_idle_baseline(void)
  * return: 0 on success, otherwise return < 0.
  *
  * NOTE:P11  0x01  corresponds to 135Hz
+ *
+ * amethyst: stock goodix_htc_set_active_scan_rate (0x1020c) sends the
+ * argument as the index unchanged; the Hz-to-index table of the Warsaw
+ * donor does not exist there. Callers pass the index.
  */
 int goodix_htc_set_active_scan_rate(int scan_rate)
 {
 	struct goodix_ts_hw_ops *hw_ops;
 	struct goodix_ts_cmd tmp_cmd;
 	int ret;
-	u8 index = 0;
+	u8 index = (u8)scan_rate;
 
 	if (!goodix_core_data)
 		return -EINVAL;
-	switch (scan_rate) {
-		case 135:
-			index = 0;
-			break;
-		case 240:
-			index = 1;
-			break;
-		case 68:
-		case 60:
-			index = 2;
-			break;
-		case 180:
-			index = 3;
-			break;
-		case 120:
-			index = 4;
-			break;
-		default:
-			index = 0;
-			break;
-	}
 
 	hw_ops = goodix_core_data->hw_ops;
 	tmp_cmd.cmd = GOODIX_CMD_ACTIVE_SCAN_RATE;
@@ -2658,7 +2712,8 @@ int goodix_htc_start_calibration(void)
 	tmp_cmd.cmd = GOODIX_CMD_START_FREQ_SCAN;
 	tmp_cmd.data[0] = 1;
 
-	tmp_cmd.len = 4;
+	/* amethyst: stock sends the data byte (len 5, stock 0x11028) */
+	tmp_cmd.len = 5;
 	if (hw_ops->send_cmd)
 		ret = hw_ops->send_cmd(goodix_core_data, &tmp_cmd);
 	ts_info("%s send freq scan/calibration cmd, ret %d", ret ? "failed" : "success", ret);
