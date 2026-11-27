@@ -31,6 +31,7 @@
 #include <linux/cdev.h>
 #include <linux/types.h>
 #include <linux/delay.h>
+#include <linux/mutex.h>
 
 /* Flag ESE_CONF_GPIO_OPEN_RELEASE is to configure nRESET GPIO in
    open function and freeing GPIO in release function */
@@ -57,7 +58,61 @@ struct st54spi_gpio_device {
 	struct spi_device *spi_dev;
 	/* GPIO for st54spi Reset pin (output) */
 	int gpiod_reset;
+#ifdef ST54SPI_XIAOMI_COMPAT
+	/* XIAOMI-COMPAT: number of outstanding ST54SPI_SET_GPIO(1) requests */
+	int power_count;
+	struct mutex power_lock;
+#endif
 };
+
+#ifdef ST54SPI_XIAOMI_COMPAT
+/*
+ * XIAOMI-COMPAT: reference-counted eSE power, as in the stock Xiaomi
+ * stm_st54se_gpio.ko.  Several userspace clients (NFC HAL, SE HAL via
+ * libEseUtils) toggle nRESET through ST54SPI_SET_GPIO; the line is only driven
+ * low once every client that asked for power has released it.
+ *
+ *  arg 1: count++, drive nRESET high, wait 10 ms for the SE to boot.
+ *  arg 0: count-- (clamped at 0); if other users remain, do nothing;
+ *         otherwise drive nRESET low and wait 3 ms.
+ *
+ * Unlike stock, the counter is protected by a mutex.
+ */
+static long st54spi_gpio_xm_set_power(struct st54spi_gpio_device *dev,
+				      unsigned long arg)
+{
+	if (arg > 1) {
+		pr_err("%s bad arg %lu\n", __func__, arg);
+		return -ENOIOCTLCMD;
+	}
+
+	mutex_lock(&dev->power_lock);
+	pr_info("Original power count = %d\n", dev->power_count);
+	if (arg)
+		dev->power_count++;
+	else
+		dev->power_count--;
+	pr_info("Updated power count = %d\n", dev->power_count);
+	if (dev->power_count < 0)
+		dev->power_count = 0;
+
+	if (arg == 0 && dev->power_count != 0) {
+		pr_info("No execution power count = %d\n", dev->power_count);
+		mutex_unlock(&dev->power_lock);
+		return 0;
+	}
+
+	pr_info("GPIO setting for power count = %d\n", dev->power_count);
+	gpio_set_value(dev->gpiod_reset, arg);
+	pr_info("%s: set eSE reset gpio status to %lu\n", __func__, arg);
+	if (arg)
+		usleep_range(10000, 10001);
+	else
+		usleep_range(3000, 3001);
+	mutex_unlock(&dev->power_lock);
+	return 0;
+}
+#endif /* ST54SPI_XIAOMI_COMPAT */
 
 /** @brief   IOCTL function  to be used to set or get data from upper layer.
  *
@@ -82,6 +137,9 @@ static long st54spi_gpio_dev_ioctl(struct file *pfile, unsigned int cmd, unsigne
 		ret = gpio_get_value(st54spi_gpio_dev->gpiod_reset);
 		break;
 	case ST54SPI_SET_GPIO:
+#ifdef ST54SPI_XIAOMI_COMPAT
+		ret = st54spi_gpio_xm_set_power(st54spi_gpio_dev, arg);
+#else
 		pr_info("ST54SPI_SET_GPIO: %lu\n", arg);
 		/* skip setting gpio low */
 		if (arg == 0) {
@@ -95,7 +153,13 @@ static long st54spi_gpio_dev_ioctl(struct file *pfile, unsigned int cmd, unsigne
 			pr_err("%s bad arg %lu\n", __func__, arg);
 			ret = -ENOIOCTLCMD;
 		}
+#endif
 		break;
+#ifndef ST54SPI_XIAOMI_COMPAT
+	/*
+	 * XIAOMI-COMPAT: the stock driver has no RESET_GPIO; it would bypass
+	 * the power reference count, so it is rejected as unsupported.
+	 */
 	case ST54SPI_RESET_GPIO:
 		pr_info("ST54SPI_RESET_GPIO\n");
 		gpio_set_value(st54spi_gpio_dev->gpiod_reset, 0);
@@ -103,6 +167,7 @@ static long st54spi_gpio_dev_ioctl(struct file *pfile, unsigned int cmd, unsigne
 		gpio_set_value(st54spi_gpio_dev->gpiod_reset, 1);
 		msleep(HARD_RESET_TIME_PULSE);
 		break;
+#endif
 	default:
 		pr_err("%s Unsupported ioctl cmd 0x%x, arg %lu\n",
 						__func__, cmd, arg);
@@ -252,6 +317,10 @@ static int st54spi_gpio_probe(struct platform_device *pdev)
 	}
 #endif
 
+#ifdef ST54SPI_XIAOMI_COMPAT
+	st54spi_gpio_dev->power_count = 0;
+	mutex_init(&st54spi_gpio_dev->power_lock);
+#endif
 	platform_set_drvdata(pdev, st54spi_gpio_dev);
 
 	return 0;

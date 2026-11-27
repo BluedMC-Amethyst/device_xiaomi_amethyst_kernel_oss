@@ -1,2 +1,14 @@
 Source: https://github.com/STMicroelectronics/ST54-android-kernel-se-gpio branch st_dev_kernel_5.10 commit f6722b6
-Unmodified except: Android.mk dropped (built by LineageOS kernel.mk).
+Licence: GPL-2.0 (LICENSE.txt)
+Changes: Android.mk dropped (built by LineageOS kernel.mk).
+
+Xiaomi compatibility (ST54SPI_XIAOMI_COMPAT, set in Kbuild; "XIAOMI-COMPAT"
+blocks in st54spi_gpio.c): reference-counted ST54SPI_SET_GPIO power and no
+ST54SPI_RESET_GPIO, matching the stock amethyst stm_st54se_gpio.ko.
+  No Xiaomi source with this logic is published. The QTI/Xiaomi
+  st/opensource/eSE-driver trees checked (xiaomi-8550-kernel/
+  android_kernel_xiaomi_sm8550-modules branch uvite, commit
+  0cce8308d8c1e1f2eca45fb6dcbfe3c8ade7c008) do not have it. The behaviour
+  was written from a specification derived from the stock binary (see
+  docs/amethyst-drivers/nfc.md); no decompiled code was used. It adds a
+  mutex around the counter, which stock lacks.

@@ -2,3 +2,7 @@ obj-m += stm_st54se_gpio.o
 
 ccflags-y := $(call cc-option,-Wno-misleading-indentation)
 stm_st54se_gpio-y :=  st54spi_gpio.o
+
+# Xiaomi stock parity (amethyst): reference-counted ST54SPI_SET_GPIO power,
+# no ST54SPI_RESET_GPIO. See the XIAOMI-COMPAT blocks in st54spi_gpio.c.
+ccflags-y += -DST54SPI_XIAOMI_COMPAT
