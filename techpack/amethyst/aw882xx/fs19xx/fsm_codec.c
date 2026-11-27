@@ -279,6 +279,35 @@ static int fsm_spksw_gpio_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+/*
+ * amethyst: FSM_Ramp_Volume, present in stock but not in the v4.0.9.3
+ * source. The HAL's FourSemi mixer paths always set it next to FSM_Volume,
+ * and PAL writes it too, so the control has to exist. See
+ * fsm_set_ramp_volume() for what a write does.
+ */
+static int fsm_ramp_volume_get(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	fsm_config_t *cfg = fsm_get_config();
+
+	ucontrol->value.integer.value[0] = cfg->ramp_volume;
+	pr_info("fsm_ramp_volume_get volume: %d",
+			(int)ucontrol->value.integer.value[0]);
+
+	return 0;
+}
+
+static int fsm_ramp_volume_put(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	int volume = ucontrol->value.integer.value[0];
+
+	pr_info("fsm_ramp_volume_put volume: %d", volume);
+	fsm_set_ramp_volume(volume);
+
+	return 0;
+}
+
 static const struct snd_kcontrol_new fsm_snd_controls[] =
 {
 	SOC_SINGLE_EXT("FSM_Scene", SND_SOC_NOPM, 0, FSM_SCENE_MAX, 0,
@@ -295,6 +324,8 @@ static const struct snd_kcontrol_new fsm_snd_controls[] =
 			fsm_ultrasound_get, fsm_ultrasound_put),
 	SOC_SINGLE_EXT("FSM_SW_GPIO", SND_SOC_NOPM, 0, 0x3, 0,
 			fsm_spksw_gpio_get, fsm_spksw_gpio_put),
+	SOC_SINGLE_EXT("FSM_Ramp_Volume", SND_SOC_NOPM, 0, FSM_VOLUME_MAX, 0,
+			fsm_ramp_volume_get, fsm_ramp_volume_put),
 };
 
 static struct snd_soc_dapm_widget fsm_dapm_widgets_common[] =

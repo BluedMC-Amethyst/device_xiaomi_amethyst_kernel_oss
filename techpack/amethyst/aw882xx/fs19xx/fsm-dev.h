@@ -574,6 +574,12 @@ struct fsm_config {
 	uint16_t freq_count;
 	uint16_t volume;
 	uint16_t amb_tempr;
+	/*
+	 * amethyst: volume for the top (FSM_POS_LTOP/LBTM) amplifier, set by
+	 * the FSM_Ramp_Volume control. Same place as in the stock module's
+	 * g_fsm_config (offset 0x1a).
+	 */
+	uint16_t ramp_volume;
 	uint16_t state     : 8;
 	uint16_t wait_type : 8;
 	uint16_t tx_fmt    : 8;

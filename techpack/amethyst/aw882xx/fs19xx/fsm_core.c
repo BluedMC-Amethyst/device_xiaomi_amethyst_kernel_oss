@@ -116,6 +116,7 @@ static struct fsm_config g_fsm_config = {
 	.freq_step  = F0_FREQ_STEP,
 	.freq_count = FREQ_COUNT,
 	.amb_tempr  = FSM_DFT_AMB_TEMPR,
+	.ramp_volume = 0, // amethyst: stock g_fsm_config starts it at 0
 	.cur_angle  = 0,
 	.next_angle = 0,
 	.speaker_on = 0,
@@ -1138,11 +1139,14 @@ int fsm_check_spkcoef(fsm_dev_t *fsm_dev)
 
 /*
  * amethyst: this is the stock module's (v4.0.7) fsm_config_vol, rebuilt from
- * its disassembly. Unlike v4.0.9.3 it only updates the 8-bit volume field,
- * bits 15:8 of AUDIOCTRL (0x16) on FS19xx or of register 0x06 on older
- * parts, with a read-modify-write. The low bits keep what the fs19xx.fsm
- * scene table wrote; its scenes set 0x16[15:6] to 0x3FF, so 255 is the
- * scene's full scale.
+ * its disassembly. Unlike v4.0.9.3 it
+ *  - takes the volume of the top amplifier (position LTOP or LBTM) from
+ *    cfg->ramp_volume (FSM_Ramp_Volume) and of the others from cfg->volume
+ *    (FSM_Volume), and
+ *  - only updates the 8-bit volume field, bits 15:8 of AUDIOCTRL (0x16) on
+ *    FS19xx or of register 0x06 on older parts, with a read-modify-write.
+ *    The low bits keep what the fs19xx.fsm scene table wrote; its scenes set
+ *    0x16[15:6] to 0x3FF, so 255 is the scene's full scale.
  */
 int fsm_config_vol(fsm_dev_t *fsm_dev)
 {
@@ -1156,7 +1160,11 @@ int fsm_config_vol(fsm_dev_t *fsm_dev)
 	if (cfg->volume > FSM_VOLUME_MAX) {
 		cfg->volume = FSM_VOLUME_MAX;
 	}
-	volume = cfg->volume;
+	if (fsm_dev->pos_mask & (FSM_POS_LTOP | FSM_POS_LBTM)) {
+		volume = cfg->ramp_volume;
+	} else {
+		volume = cfg->volume;
+	}
 	pr_addr(debug, "vol: %04X", volume);
 
 	return fsm_set_bf(fsm_dev, (fsm_dev->is19xx ? 0x7816 : 0x7806), volume);
@@ -1384,6 +1392,52 @@ void fsm_set_volume(int volume)
 	cfg->volume = volume;
 	if (!cfg->stream_muted) {
 		fsm_list_func(fsm_dev, fsm_config_vol);
+	}
+	fsm_mutex_unlock();
+}
+
+/*
+ * amethyst: FSM_Ramp_Volume backend. Not in the v4.0.9.3 source; rebuilt
+ * from the stock module's fsm_set_ramp_volume (see fs19xx/ORIGIN):
+ *  - the value is clamped to 0..FSM_VOLUME_MAX like fsm_set_volume and kept
+ *    in cfg->ramp_volume, so it also applies at the next start-up;
+ *  - while a stream is running, the first device on the list whose position
+ *    is LTOP or LBTM gets its volume register written at once. That is the
+ *    top amplifier (0x34, position 0x8 in fs19xx.fsm), which also drives the
+ *    earpiece. There is no ramp, step or delay in stock: the "ramp" is done
+ *    by whoever writes the control (PAL's FourSemi fade-out code).
+ *  - unlike fsm_set_volume, the device is not skipped when it is not
+ *    initialised or not in the current scene, as in stock.
+ */
+void fsm_set_ramp_volume(int volume)
+{
+	fsm_config_t *cfg = fsm_get_config();
+	fsm_dev_t *fsm_dev = NULL;
+	fsm_dev_t *target = NULL;
+
+	if (!cfg) {
+		return;
+	}
+	fsm_mutex_lock();
+	if (volume < 0 || volume > FSM_VOLUME_MAX) {
+		pr_debug("invalid volume: %d, default 0dB", volume);
+		volume = FSM_VOLUME_MAX;
+	}
+	cfg->ramp_volume = volume;
+	if (!cfg->stream_muted) {
+		if (cfg->dev_count > 0) {
+			list_for_each_entry(fsm_dev, &fsm_dev_list, list) {
+				if (fsm_dev->pos_mask & (FSM_POS_LTOP | FSM_POS_LBTM)) {
+					target = fsm_dev;
+					break;
+				}
+			}
+		}
+		if (target) {
+			fsm_config_vol(target);
+		} else {
+			pr_err("Failed to set ramp volume, NO RCV/Left PA");
+		}
 	}
 	fsm_mutex_unlock();
 }
