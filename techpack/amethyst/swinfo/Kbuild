@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Xiaomi software info (/proc/swinfo/platform_config.gz, minidump FINGERPRINT).
+# Source: MiCode Xiaomi_Kernel_OpenSource onyx-v-oss drivers/xiaomi/swinfo;
+# see ORIGIN. The kernel .config is embedded as in the release Makefile; the
+# blob path is passed in because external modules do not build under
+# drivers/xiaomi/swinfo.
+obj-m += swinfo.o
+swinfo-y := swinfo_func.o
+
+CFLAGS_swinfo_func.o += -DSWINFO_CONFIG_GZ=\"$(obj)/config_platform_data.gz\"
+
+$(obj)/swinfo_func.o: $(obj)/config_platform_data.gz
+
+$(obj)/config_platform_data.gz: $(obj)/config_platform_data FORCE
+	$(call if_changed,gzip)
+
+filechk_cat = cat $<
+
+$(obj)/config_platform_data: $(KCONFIG_CONFIG) FORCE
+	$(call filechk,cat)
+
+targets += config_platform_data config_platform_data.gz
