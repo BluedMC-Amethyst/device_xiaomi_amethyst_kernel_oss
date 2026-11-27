@@ -272,7 +272,9 @@ static long fsm_misc_ioctl(struct file *filp, unsigned int cmd,
 		unsigned long arg)
 {
 	struct fsm_misc_args misc_args;
+#if defined(CONFIG_FSM_Q6AFE) || defined(CONFIG_FSM_MTK)
 	struct fsm_re25_data re25_data;
+#endif
 	struct fsm_misc *fsm_misc;
 	int count;
 	int ret;

@@ -1136,10 +1136,17 @@ int fsm_check_spkcoef(fsm_dev_t *fsm_dev)
 	return ret;
 }
 
+/*
+ * amethyst: this is the stock module's (v4.0.7) fsm_config_vol, rebuilt from
+ * its disassembly. Unlike v4.0.9.3 it only updates the 8-bit volume field,
+ * bits 15:8 of AUDIOCTRL (0x16) on FS19xx or of register 0x06 on older
+ * parts, with a read-modify-write. The low bits keep what the fs19xx.fsm
+ * scene table wrote; its scenes set 0x16[15:6] to 0x3FF, so 255 is the
+ * scene's full scale.
+ */
 int fsm_config_vol(fsm_dev_t *fsm_dev)
 {
 	fsm_config_t *cfg = fsm_get_config();
-	uint16_t volctrl;
 	uint16_t volume;
 
 	if (!fsm_dev || !cfg) {
@@ -1149,22 +1156,10 @@ int fsm_config_vol(fsm_dev_t *fsm_dev)
 	if (cfg->volume > FSM_VOLUME_MAX) {
 		cfg->volume = FSM_VOLUME_MAX;
 	}
-	// volume = (fsm_dev->state.calibrated ? cfg->volume : 0xDF); // -12dB
-	if (fsm_dev->is19xx) {
-		volctrl = 0x16;
-		if (HIGH8(fsm_dev->version) == FS1958_DEV_ID){
-        	volume = ((cfg->volume  << 1) + 1) << 7;
-        } else {
-            //for Amazon series, 3FFh(bit 15:6) as maximum
-            volume = ((cfg->volume  << 8) | 0x00C0);
-        }
-	} else {
-		volctrl = 0x06;
-		volume = ((cfg->volume << 8) & 0xFF00);
-	}
+	volume = cfg->volume;
 	pr_addr(debug, "vol: %04X", volume);
 
-	return fsm_reg_write(fsm_dev, volctrl, volume);
+	return fsm_set_bf(fsm_dev, (fsm_dev->is19xx ? 0x7816 : 0x7806), volume);
 }
 
 int fsm_ops_dummy(fsm_dev_t *fsm_dev)

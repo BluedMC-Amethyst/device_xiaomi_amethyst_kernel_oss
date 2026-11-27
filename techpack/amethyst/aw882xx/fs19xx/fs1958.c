@@ -91,7 +91,11 @@ const static fsm_pll_config_t g_fs19xx_pll_tbl[] = {
 	{ 2822400, 0x0260, 0x0460, 0x000A }, //            & 44100*32*2
 	{ 3072000, 0x0260, 0x0540, 0x000C }, //            & 48000*32*2
 	{ 6144000, 0x0260, 0x0540, 0x0018 }, // 96000*32*2 & 48000*32*4
-	{12288000, 0x0260, 0x0540, 0x0030 }, //            & 48000*32*8
+	/*
+	 * amethyst: stock aw882xx_dlkm's table has these values for 12.288 MHz;
+	 * v4.0.9.3 has 0x0540/0x0030. Keep the values the device shipped with.
+	 */
+	{12288000, 0x0260, 0x02A0, 0x0018 }, //            & 48000*32*8
 };
 
 static int fs19xx_i2c_reset(fsm_dev_t *fsm_dev)
@@ -106,6 +110,8 @@ static int fs19xx_i2c_reset(fsm_dev_t *fsm_dev)
 
 	for (i = 0; i < FSM_I2C_RETRY; i++) {
 		fsm_reg_write(fsm_dev, REG(FS19XX_PWRCTRL), 0x0002); // reset nack
+		/* amethyst: stock reads PWRCTRL back once here (value unused) */
+		fsm_reg_read(fsm_dev, REG(FS19XX_PWRCTRL), NULL);
 		fsm_delay_ms(15); // 15ms
 		ret = fsm_reg_write(fsm_dev, REG(FS19XX_PWRCTRL), 0x0001);
 		ret |= fsm_reg_read(fsm_dev, REG(FS19XX_CHIPINI), &val);
@@ -138,25 +144,10 @@ int fs19xx_get_srate_bits(fsm_dev_t *fsm_dev, uint32_t srate)
 	return -EINVAL;
 }
 
-static int fs19xx_read_dtype(fsm_dev_t *fsm_dev)
-{
-	uint16_t val;
-	int ret;
-
-	if (fsm_dev == NULL)
-		return -EINVAL;
-
-	ret  = fsm_reg_write(fsm_dev, 0x0B, 0xCA91);
-	ret |= fsm_reg_read(fsm_dev, 0xC3, &val);
-	ret |= fsm_reg_write(fsm_dev, 0x0B, 0x0000);
-	if (ret)
-		return ret;
-
-	fsm_dev->dtype  = (fsm_dev->version & 0xFF00);
-	fsm_dev->dtype |= ((val >> 5) & 0x7); // [7..5]
-
-	return 0;
-}
+/*
+ * amethyst: v4.0.9.3's fs19xx_read_dtype() (OTP read of register 0xC3 into
+ * fsm_dev->dtype, which nothing uses) is not in stock and is dropped.
+ */
 
 int fs19xx_reg_init(fsm_dev_t *fsm_dev)
 {
@@ -176,7 +167,6 @@ int fs19xx_reg_init(fsm_dev_t *fsm_dev)
 		pr_addr(err, "init failed:%d", ret);
 		fsm_dev->state.dev_inited = false;
 	}
-	fs19xx_read_dtype(fsm_dev);
 
 	return ret;
 }
@@ -281,6 +271,11 @@ int fs19xx_start_up(fsm_dev_t *fsm_dev)
 		}
 	}
 	fsm_dev->errcode = ret;
+	if (ret) {
+		/* amethyst: stock reports this to miev; log it instead */
+		fsm_log_exception(FSM_EVT_DATA, "PA data exception",
+				&fsm_dev->i2c->dev);
+	}
 
 	return ret;
 }
@@ -300,27 +295,21 @@ int fs19xx_shut_down(fsm_dev_t *fsm_dev)
 	return ret;
 }
 
+/*
+ * amethyst: the stock (v4.0.7) version, rebuilt from its disassembly. Unlike
+ * v4.0.9.3 it does not power the amplifier down and back up around the
+ * changes and does not touch the noise gate (register 0x39). It only runs
+ * for the calibration scene (FSM_Scene 16, force_calib).
+ */
 int fs19xx_pre_calib(fsm_dev_t *fsm_dev)
 {
-	uint16_t pwrctrl, ngctrl;
-	uint16_t tsctrl;
-	uint16_t bsgctrl;
-	uint16_t lpmctrl;
+	uint16_t tsctrl = 0;
+	uint16_t bsgctrl = 0;
+	uint16_t lpmctrl = 0;
 	int ret;
 
 	if (fsm_dev == NULL) {
 		return -EINVAL;
-	}
-	ret = fsm_reg_read(fsm_dev, REG(FS19XX_PWRCTRL), &pwrctrl);
-	if (pwrctrl == 0x0000) {
-		ret |= fsm_reg_write(fsm_dev, REG(FS19XX_PWRCTRL), 0x0001); // power down
-		fsm_delay_ms(30);
-	}
-	if (HIGH8(fsm_dev->version) == FS19XX_DEV_ID) {
-		// Disabel NG
-		ret = fsm_reg_read(fsm_dev, 0x39, &ngctrl);
-		set_bf_val(&ngctrl, 0x0F39, 0);
-		ret |= fsm_reg_write(fsm_dev, 0x39, ngctrl);
 	}
 	ret = fsm_reg_multiread(fsm_dev, 0x3C, &lpmctrl);
 	if (get_bf_val(0x0F3C, lpmctrl)) {
@@ -344,8 +333,6 @@ int fs19xx_pre_calib(fsm_dev_t *fsm_dev)
 		ret |= fsm_reg_write(fsm_dev, 0xBC, bsgctrl);
 		fsm_delay_ms(35);
 	}
-
-	ret |= fsm_reg_write(fsm_dev, REG(FS19XX_PWRCTRL), pwrctrl); // recover
 	fsm_dev->cur_scene = 0;
 
 	return ret;

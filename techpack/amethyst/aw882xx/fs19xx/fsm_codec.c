@@ -26,22 +26,15 @@ static const struct snd_pcm_hw_constraint_list fsm_constraints = {
 	.count = ARRAY_SIZE(fsm_rates),
 };
 
-#define FSM_SET_DSP_RE_DELAY  (100)
-#define FSM_SET_DSP_RE_RETRY  (5)
-static struct workqueue_struct *work_queue;
-static struct delayed_work re25_work;
-static int retry_cnt = 0;
+/*
+ * amethyst: v4.0.9.3's re25 work (fsm_set_re25_work, work_queue, re25_work)
+ * only pushes the calibrated Re to the DSP through q6afe/MTK IPI, which this
+ * build does not have (fsm_afe_mod_ctrl() is a constant 0). Stock has no
+ * such work either; it is removed. On AudioReach, PAL/libfsalgocal send Re
+ * to the ADSP FourSemi module themselves.
+ */
 
-static void fsm_set_re25_work(struct work_struct *work)
-{
-	if (retry_cnt++ >= FSM_SET_DSP_RE_RETRY)
-		return;
-	if (fsm_afe_mod_ctrl(true)) {
-		queue_delayed_work(work_queue,
-				&re25_work,
-				msecs_to_jiffies(FSM_SET_DSP_RE_DELAY));
-	}
-}
+extern void set_smartpa_codec(struct device *dev, const char *dai_name);
 
 static int fsm_get_scene_index(uint16_t scene)
 {
@@ -258,13 +251,31 @@ static int fsm_spksw_gpio_get(struct snd_kcontrol *kcontrol,
 	}
 	return 0;
 }
+/*
+ * amethyst: stock behaviour (rebuilt from its disassembly). With the
+ * ultrasound scene active, the volume is dropped to 0 for 50 ms around the
+ * earpiece/speaker switch and then restored to 255, to avoid a pop.
+ */
 static int fsm_spksw_gpio_put(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
 	fsm_config_t *cfg = fsm_get_config();
-	int spksw_level = ucontrol->value.enumerated.item[0];
-	pr_info("spksw = %d\n", spksw_level);
+	int spksw_level = ucontrol->value.integer.value[0];
+
+	pr_err("spksw = %d\n", spksw_level);
+	if (cfg->ultrasound_on) {
+		pr_err("fsm_spksw_gpio_put : ultrasound is on 1! \n");
+		fsm_set_volume(0);
+		fsm_delay_ms(50);
+		pr_err("fsm_spksw_gpio_put : after set volume 0\n");
+	}
 	gpio_set_value_cansleep(cfg->spksw_gpio, !!spksw_level);
+	if (cfg->ultrasound_on && cfg->volume == 0) {
+		pr_err("fsm_spksw_gpio_put : ultrasound is on 2! \n");
+		fsm_delay_ms(50);
+		fsm_set_volume(FSM_VOLUME_MAX);
+		pr_err("fsm_spksw_gpio_put : after set volume 255\n");
+	}
 	return 0;
 }
 
@@ -432,24 +443,6 @@ static int fsm_hw_params(struct snd_pcm_substream *substream,
 
 static int fsm_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 {
-	fsm_config_t *cfg = fsm_get_config();
-
-	if (cfg->next_scene != FSM_SCENE_RCV) {
-		if (mute) {
-			if (work_queue)
-				cancel_delayed_work_sync(&re25_work);
-		} else {
-			//set re25
-			if (work_queue) {
-				retry_cnt = 0;
-				cancel_delayed_work_sync(&re25_work);
-				queue_delayed_work(work_queue,
-					&re25_work,
-					msecs_to_jiffies(FSM_SET_DSP_RE_DELAY));
-			}
-		}
-	}
-
 	if (stream != SNDRV_PCM_STREAM_PLAYBACK) {
 		pr_info("captrue stream");
 		return 0;
@@ -555,8 +548,6 @@ static int fsm_codec_probe(struct snd_soc_codec *codec)
 			// firmware init fail, it will retry in speaker on
 			pr_err("firmware init fail:%d, retry later", ret);
 		}
-		work_queue = create_singlethread_workqueue("fs19xx-work");
-		INIT_DELAYED_WORK(&re25_work, fsm_set_re25_work);
 	}
 	fsm_afe_init_controls(codec);
 	ret = fsm_add_widgets(codec);
@@ -579,10 +570,6 @@ static remove_ret_type fsm_codec_remove(struct snd_soc_codec *codec)
 	}
 	if (fsm_dev->id == 0) {
 		fsm_firmware_deinit();
-		if (work_queue) {
-			cancel_delayed_work_sync(&re25_work);
-			destroy_workqueue(work_queue);
-		}
 	}
 	return remove_ret_val;
 }
@@ -655,6 +642,7 @@ int fsm_codec_register(struct device *dev, int id)
 			&fsm_aif_dai[id], 1);
 	if (ret < 0) {
 		dev_err(dev, "failed to register CODEC DAI: %d", ret);
+		fsm_log_exception(FSM_EVT_DETECTION, "PA detection exception", dev);
 		return ret;
 	}
 
@@ -663,7 +651,8 @@ int fsm_codec_register(struct device *dev, int id)
 	cfg->codec_dai_name[id] = kstrdup(fsm_aif_dai[id].name, GFP_KERNEL);
 	pr_info("codec:%s, dai:%s", cfg->codec_name[id], cfg->codec_dai_name[id]);
 
-	//set_smartpa_codec(dev, cfg->codec_dai_name[id]);
+	/* amethyst: hand the DAI to the machine driver's speaker TDM links */
+	set_smartpa_codec(dev, cfg->codec_dai_name[id]);
 
 	return ret;
 }

@@ -15,13 +15,20 @@
 
 #if defined(__KERNEL__)
 /* kernel module: */
+/*
+ * amethyst: the feature set the stock aw882xx_dlkm was built with, as read
+ * from its symbol table: misc device, codec, firmware loader and i2c. No
+ * sysfs class (fsm_class.c), no q6afe/APR DSP transport (AudioReach has
+ * none; the FourSemi DSP algorithm is driven from userspace through AGM)
+ * and no MediaTek IPI.
+ */
 #define CONFIG_FSM_MISC
 #define CONFIG_FSM_CODEC
-#define CONFIG_FSM_SYSFS
+// #define CONFIG_FSM_SYSFS
 #define CONFIG_FSM_FIRMWARE
 #define CONFIG_FSM_I2C
 // #define CONFIG_FSM_Q6AFE
-#define CONFIG_FSM_MTK
+// #define CONFIG_FSM_MTK
 // #define CONFIG_FSM_CROSSFADE
 #endif
 

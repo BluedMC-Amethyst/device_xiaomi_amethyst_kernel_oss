@@ -206,6 +206,15 @@ int fsm_stub_set_tsignal(fsm_dev_t *fsm_dev, bool enable);
 int fsm_stub_shut_down(fsm_dev_t *fsm_dev);
 int fsm_stub_dev_deinit(fsm_dev_t *fsm_dev);
 int fsm_mievent_report(unsigned int eventid,const char *value,struct device *dev);
+/*
+ * amethyst: stock reports these through Xiaomi's miev (fs_mievent_report);
+ * this build only logs them, see fs19xx/ORIGIN.
+ */
+#define FSM_EVT_DETECTION 0x36007bc8 /* "PA detection exception" */
+#define FSM_EVT_I2C       0x36007bc9 /* "PA i2c exception" */
+#define FSM_EVT_DATA      0x36007bca /* "PA data exception" */
+void fsm_log_exception(unsigned int eventid, const char *keyword,
+		struct device *dev);
 
 /*
  * module: fsm_hal

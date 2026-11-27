@@ -22,14 +22,33 @@ static struct regulator *g_fsm_vdd = NULL;
 static DEFINE_MUTEX(g_fsm_mutex);
 static struct device *g_fsm_pdev = NULL;
 
+/*
+ * amethyst: MiCode's machine driver (audio-kernel asoc/pineapple.c) owns the
+ * smart-PA type latch shared with the Awinic driver in this module.
+ */
+extern bool check_smartpa_type(const char *name);
+extern int set_smartpa_type(const char *name, unsigned int size);
+
 /* customize configrature */
 #include "fsm_firmware.c"
-#include "fsm_class.c"
 #include "fsm_misc.c"
-#include "fsm_q6afe.c"
-#include "fsm_mtk_ipi.c"
 #include "fsm_codec.c"
-#include  "../../../mediatek/common/mtk-sp-spk-amp.h"
+
+/*
+ * amethyst: stock sends these events to Xiaomi's miev daemon
+ * (fs_mievent_report -> cdev_tevent_*). This build keeps aw882xx_dlkm free
+ * of a miev dependency, so the event is only logged.
+ */
+void fsm_log_exception(unsigned int eventid, const char *keyword,
+		struct device *dev)
+{
+	if (dev)
+		dev_err(dev, "exception %u: %s (miev report not built in)",
+				eventid, keyword);
+	else
+		pr_err("exception %u: %s (miev report not built in)",
+				eventid, keyword);
+}
 
 void fsm_mutex_lock(void)
 {
@@ -445,7 +464,12 @@ static int fsm_parse_dts(struct i2c_client *i2c, fsm_dev_t *fsm_dev)
 		pr_info("0x%02x: fsm,rst-gpio cannot find", i2c->addr);
 	}
 
-	fsm_dev->irq_gpio = of_get_named_gpio(np, "irq-gpio", 0);
+	/*
+	 * amethyst: stock looks the IRQ line up under "interrupts", which the
+	 * aw882xx_smartpa nodes do not have, so the line stays unclaimed here
+	 * (the chip interrupt is unused: fsm_detect_device clears use_irq).
+	 */
+	fsm_dev->irq_gpio = of_get_named_gpio(np, "interrupts", 0);
 	if (gpio_is_valid(fsm_dev->irq_gpio)) {
 		ret = devm_gpio_request_one(&i2c->dev, fsm_dev->irq_gpio,
 			GPIOF_DIR_IN, "FS19XX_IRQ");
@@ -458,7 +482,8 @@ static int fsm_parse_dts(struct i2c_client *i2c, fsm_dev_t *fsm_dev)
 	}
 	pr_info("re25 default:%d", fsm_dev->re25_dft);
 
-	spksw_gpio = of_get_named_gpio(np, "spk-sw-gpio", 0);
+	/* amethyst: the stock DT and stock driver call it "spksw-gpio" */
+	spksw_gpio = of_get_named_gpio(np, "spksw-gpio", 0);
 	pr_info("spksw_gpio = %d \n", spksw_gpio);
 	if (gpio_is_valid(spksw_gpio)) {
 		ret = devm_gpio_request_one(&i2c->dev, spksw_gpio,
@@ -531,6 +556,7 @@ static int __maybe_unused fsm_i2c_probe(struct i2c_client *i2c)
 	ret = fsm_probe(fsm_dev, i2c->addr);
 	if (ret) {
 		dev_err(&i2c->dev, "detect device failed");
+		fsm_log_exception(FSM_EVT_I2C, "PA i2c exception", &i2c->dev);
 #if defined(CONFIG_FSM_REGMAP)
 		fsm_regmap_i2c_deinit(fsm_dev->regmap);
 #endif
@@ -550,7 +576,6 @@ static int __maybe_unused fsm_i2c_probe(struct i2c_client *i2c)
 	fsm_request_irq(fsm_dev);
 
 	set_smartpa_type("fs19xx", sizeof("fs19xx"));
-	mtk_spk_set_type(MTK_SPK_FS_FS19xx);
 
 	if(fsm_dev->id == 0) {
 		// reigster only in the first device

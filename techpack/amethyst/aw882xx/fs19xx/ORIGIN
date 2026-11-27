@@ -1,0 +1,103 @@
+FourSemi FS19xx smart-PA driver (FSM_CODE_VERSION v4.0.9.3, 20240926)
+=====================================================================
+
+Upstream
+--------
+Repository: https://github.com/MiCode/MTK_kernel_device_modules
+Branch:     dash-w-oss
+Commit:     9c6256406e2afb9c316fe3be05a66c1eaa88d900
+            ("Kernel: Xiaomi kernel_device_module changes for REDMI Turbo 5
+            Max Android W", 2026-06-18)
+Path:       sound/soc/codecs/pa_combine/fs19xx/
+
+Imported files and their upstream blob ids (the first commit adding this
+directory is a verbatim copy; check with git hash-object):
+
+  fs1958.c        1e349cf371885f3203992d0e9c4ca06402a49070
+  fsm-dev.h       fd1121475685e26aad954eb5afa7500225e1a217
+  fsm_codec.c     80933c855915935f3fc51c20f81aa2b7d0788873
+  fsm_core.c      b5f8f1706c3480aad717e0476d760c0f68847c80
+  fsm_firmware.c  8de3ce6192b209979f7284f27626f273c2d9b961
+  fsm_i2c.c       f79a3dafc450526cd53661a549e9c108ae883688
+  fsm_misc.c      72f2846e4ae3eb3c950b6c776498bc10aaace722
+  fsm_public.h    855d48fc6e5c816ef2ddec93d5bf3abb7d6c3d9f
+
+Not imported: fsm_class.c, fsm_q6afe.[ch], fsm_mtk_ipi.[ch]. The stock
+amethyst aw882xx_dlkm has no symbol from any of them.
+
+Upstream builds the same three objects into one module next to the Awinic
+driver (pa_combine/Makefile: fs19xx/fsm_core.o fs19xx/fs1958.o
+fs19xx/fsm_i2c.o); fsm_i2c.c #includes fsm_firmware.c, fsm_misc.c and
+fsm_codec.c. ../Kbuild does the same.
+
+License
+-------
+The files carry only "Copyright (C) Fourier Semiconductor Inc. All rights
+reserved." and no license notice. Xiaomi publishes them in its GPL kernel
+module source release, built into a module whose MODULE_LICENSE is
+"GPL v2" (aw882xx.c here and in upstream). The stock amethyst module that
+contains this code says license=GPL v2. They are used here under GPL-2.0
+on that basis.
+
+Reference binary
+----------------
+Stock aw882xx_dlkm.ko from amethyst OS3.0.306.0 (vendor_dlkm), which links
+FourSemi v4.0.7 (20230609). It was only read (symbols, relocations,
+strings, disassembly) to find where v4.0.9.3 differs from what the device
+shipped. Nothing from it is copied.
+
+Local changes (all marked "amethyst:" in the source)
+----------------------------------------------------
+fsm-dev.h
+  - Feature set of the stock module: CONFIG_FSM_MISC, CODEC, FIRMWARE, I2C.
+    CONFIG_FSM_SYSFS and CONFIG_FSM_MTK turned off (CONFIG_FSM_Q6AFE was
+    already off).
+
+fsm_public.h
+  - Prototype for fsm_log_exception() and the three Xiaomi exception event
+    ids stock uses.
+
+fsm_core.c
+  - fsm_config_vol(): only the 8-bit volume field (bits 15:8 of 0x16 on
+    FS19xx, of 0x06 otherwise) is written, through fsm_set_bf()
+    (read-modify-write), as in stock. v4.0.9.3 wrote the whole register as
+    (volume << 8) | 0xC0.
+
+fs1958.c
+  - g_fs19xx_pll_tbl, 12.288 MHz BCLK: 0xA2 = 0x02A0, 0xA3 = 0x0018 as in
+    stock (v4.0.9.3: 0x0540, 0x0030).
+  - fs19xx_i2c_reset(): read PWRCTRL back once after the 0x0002 write, as
+    stock does.
+  - fs19xx_reg_init(): no fs19xx_read_dtype() (not in stock; its result was
+    unused). The function is removed.
+  - fs19xx_pre_calib(): stock version. No power-down/up around the changes
+    and no noise-gate (0x39) write.
+  - fs19xx_start_up(): log "PA data exception" when start-up fails (stock
+    reports it to miev).
+
+fsm_codec.c
+  - The re25 workqueue (fsm_set_re25_work and friends) is removed. It only
+    called fsm_afe_mod_ctrl(), which is a constant 0 without q6afe/IPI;
+    stock has none.
+  - fsm_codec_register(): call the machine driver's set_smartpa_codec()
+    (commented out upstream, called by stock) and log "PA detection
+    exception" when the component cannot be registered.
+  - fsm_spksw_gpio_put(): stock behaviour, including the volume 0 / 50 ms /
+    volume 255 sequence around the switch while ultrasound is on.
+
+fsm_i2c.c
+  - Drop the #includes of fsm_class.c, fsm_q6afe.c, fsm_mtk_ipi.c and the
+    MediaTek speaker-type header, and the mtk_spk_set_type() call.
+  - Declare the machine driver's check_smartpa_type()/set_smartpa_type().
+  - DT names as in stock and in the amethyst DT: "spksw-gpio" (upstream:
+    "spk-sw-gpio"); the IRQ line is looked up under "interrupts" like stock
+    (upstream: "irq-gpio"). The amethyst nodes have no such property, so the
+    IRQ line stays unclaimed, exactly as in stock. The chip interrupt is
+    unused in both: fsm_detect_device() clears use_irq.
+  - fsm_log_exception() replaces stock's fs_mievent_report(): it logs the
+    event instead of sending it to miev, so aw882xx_dlkm does not depend on
+    miev. Called for "PA i2c exception" when the device is not detected.
+
+fsm_misc.c
+  - Declare re25_data only when q6afe/IPI is built (unused-variable error
+    otherwise).
