@@ -976,12 +976,16 @@ static bool dwc3_core_is_valid(struct dwc3 *dwc)
 	if (dwc->ip == DWC4_IP)
 		dwc->ip = DWC32_IP;
 
+	pr_info("dwc_ip_gsynpsid 0x%x\n", reg);
+
 	/* This should read as U3 followed by revision number */
 	if (DWC3_IP_IS(DWC3)) {
 		dwc->revision = reg;
 	} else if (DWC3_IP_IS(DWC31) || DWC3_IP_IS(DWC32)) {
 		dwc->revision = dwc3_readl(dwc->regs, DWC3_VER_NUMBER);
+		pr_info("dwc_ip_rversion 0x%x\n", dwc->revision);
 		dwc->version_type = dwc3_readl(dwc->regs, DWC3_VER_TYPE);
+		pr_info("dwc_ip_version_type 0x%x\n", dwc->version_type);
 	} else {
 		return false;
 	}
@@ -1599,6 +1603,7 @@ static int dwc3_core_init_mode(struct dwc3 *dwc)
 			return dev_err_probe(dev, ret, "failed to initialize host\n");
 		break;
 	case USB_DR_MODE_OTG:
+		pr_info("usb dr mode is otg\n");
 		INIT_WORK(&dwc->drd_work, __dwc3_set_mode);
 		ret = dwc3_drd_init(dwc);
 		if (ret)
