@@ -48,6 +48,8 @@ unsigned int sysctl_sched_boost;
 unsigned int sysctl_sched_wake_up_idle[2];
 unsigned int sysctl_input_boost_ms;
 unsigned int sysctl_input_boost_freq[8];
+unsigned int sysctl_powerkey_input_boost_ms;
+unsigned int sysctl_powerkey_input_boost_freq[8];
 unsigned int sysctl_sched_boost_on_input;
 unsigned int sysctl_sched_early_up[MAX_MARGIN_LEVELS];
 unsigned int sysctl_sched_early_down[MAX_MARGIN_LEVELS];
@@ -927,6 +929,24 @@ struct ctl_table input_boost_sysctls[] = {
 		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
+		.procname	= "powerkey_input_boost_ms",
+		.data		= &sysctl_powerkey_input_boost_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred_thousand,
+	},
+	{
+		.procname	= "powerkey_input_boost_freq",
+		.data		= &sysctl_powerkey_input_boost_freq,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
 		.procname	= "sched_boost_on_input",
 		.data		= &sysctl_sched_boost_on_input,
 		.maxlen		= sizeof(unsigned int),
@@ -1354,7 +1374,7 @@ struct ctl_table walt_table[] = {
 	{
 		.procname	= "sched_cluster_util_thres_pct",
 		.data		= &sysctl_sched_cluster_util_thres_pct,
-		.maxlen		= sizeof(unsigned int),
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
 		.mode		= 0644,
 		.proc_handler	= sched_cluster_util_thres_pct_handler,
 		.extra1		= SYSCTL_ZERO,
@@ -1372,7 +1392,7 @@ struct ctl_table walt_table[] = {
 	{
 		.procname	= "sched_idle_enough",
 		.data		= &sysctl_sched_idle_enough,
-		.maxlen		= sizeof(unsigned int),
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
 		.mode		= 0644,
 		.proc_handler	= sched_idle_enough_handler,
 		.extra1		= SYSCTL_ZERO,
@@ -1423,16 +1443,16 @@ struct ctl_table walt_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &one_thousand_twenty_four,
 	},
-	{
-		.procname	= "sched_heavy_nr",
-		.data		= &sysctl_sched_heavy_nr,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_douintvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= &walt_max_cpus,
-	},
-	{
+    {
+        .procname       = "sched_heavy_nr",
+        .data           = &sysctl_sched_heavy_nr,
+        .maxlen         = sizeof(unsigned int),
+        .mode           = 0644,
+        .proc_handler   = proc_douintvec_minmax,
+        .extra1         = SYSCTL_ZERO,
+        .extra2         = &walt_max_cpus,
+    },
+    {
 		.procname	= "sched_sbt_enable",
 		.data		= &sysctl_sched_sbt_enable,
 		.maxlen		= sizeof(unsigned int),
@@ -1442,55 +1462,55 @@ struct ctl_table walt_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 	{
-		.procname	= "sched_sbt_pause_cpus",
-		.data		= &sysctl_sched_sbt_pause_cpus,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= walt_proc_sbt_pause_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
+            .procname       = "sched_sbt_pause_cpus",
+            .data           = &sysctl_sched_sbt_pause_cpus,
+            .maxlen         = sizeof(unsigned int),
+            .mode           = 0644,
+            .proc_handler   = walt_proc_sbt_pause_handler,
+            .extra1         = SYSCTL_ZERO,
+            .extra2         = SYSCTL_INT_MAX,
+    },
+    {
+            .procname       = "sched_sbt_delay_windows",
+            .data           = &sysctl_sched_sbt_delay_windows,
+            .maxlen         = sizeof(unsigned int),
+            .mode           = 0644,
+            .proc_handler   = proc_douintvec_minmax,
+            .extra1         = SYSCTL_ZERO,
+            .extra2         = SYSCTL_INT_MAX,
+    },
+    {
+			.procname	= "sched_pipeline_cpus",
+			.data		= &sysctl_sched_pipeline_cpus,
+			.maxlen		= sizeof(unsigned int),
+			.mode		= 0644,
+			.proc_handler	= walt_proc_pipeline_cpus_handler,
+			.extra1		= SYSCTL_ZERO,
+			.extra2		= SYSCTL_INT_MAX,
 	},
-	{
-		.procname	= "sched_sbt_delay_windows",
-		.data		= &sysctl_sched_sbt_delay_windows,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_douintvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
-	},
-	{
-		.procname	= "sched_pipeline_cpus",
-		.data		= &sysctl_sched_pipeline_cpus,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= walt_proc_pipeline_cpus_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
-	},
-	{
-		.procname	= "sched_max_freq_partial_halt",
-		.data		= &sysctl_max_freq_partial_halt,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_douintvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
-	},
-	{
-		.procname	= "sched_fmax_cap",
-		.data		= &sysctl_fmax_cap,
-		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
-		.mode		= 0644,
-		.proc_handler	= sched_fmax_cap_handler,
-	},
-	{
-		.procname	= "sched_high_perf_cluster_freq_cap",
-		.data		= &high_perf_cluster_freq_cap,
-		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
-		.mode		= 0644,
-		.proc_handler	= sched_fmax_cap_handler,
-	},
+    {
+            .procname       = "sched_max_freq_partial_halt",
+            .data           = &sysctl_max_freq_partial_halt,
+            .maxlen         = sizeof(unsigned int),
+            .mode           = 0644,
+            .proc_handler   = proc_douintvec_minmax,
+            .extra1         = SYSCTL_ZERO,
+            .extra2         = SYSCTL_INT_MAX,
+    },
+    {
+            .procname       = "sched_fmax_cap",
+            .data           = &sysctl_fmax_cap,
+            .maxlen         = sizeof(unsigned int) * MAX_CLUSTERS,
+            .mode           = 0644,
+            .proc_handler   = sched_fmax_cap_handler,
+    },
+    {
+            .procname       = "sched_high_perf_cluster_freq_cap",
+            .data           = &high_perf_cluster_freq_cap,
+            .maxlen         = sizeof(unsigned int) * MAX_CLUSTERS,
+            .mode           = 0644,
+            .proc_handler   = sched_fmax_cap_handler,
+    },
 	{
 		.procname	= "sched_cluster0_freq_map",
 		.data		= sysctl_cluster_arr[0],
@@ -1579,6 +1599,7 @@ void walt_tunables(void)
 	sched_ravg_window = DEFAULT_SCHED_RAVG_WINDOW;
 
 	sysctl_input_boost_ms = 40;
+	sysctl_powerkey_input_boost_ms = 400;
 
 	for (i = 0; i < 8; i++)
 		sysctl_input_boost_freq[i] = 0;
