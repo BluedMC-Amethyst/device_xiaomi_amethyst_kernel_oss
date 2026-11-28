@@ -93,6 +93,29 @@ class Emitter:
             return "<" + " ".join(self.num(c) for c in cells) + ">"
         return "[" + " ".join("%02x" % x for x in b) + "]"
 
+    @staticmethod
+    def wrap(head, v, width=96):
+        """Split long string lists after commas and long cell lists at cells."""
+        if len(head.expandtabs(8)) + len(v) <= width:
+            return [head + v]
+        cont = "\t" * head.count("\t") + " " * (len(head) - head.count("\t"))
+        if v.startswith('"'):
+            toks = re.findall(r'"(?:[^"\\]|\\.)*"(?:, |;)', v)
+        elif v.startswith("<"):
+            inner = v[1:-2].split(" ")
+            toks = ["<" + inner[0]] + inner[1:-1] + [inner[-1] + ">;"] if len(inner) > 1 else [v]
+            toks = [t + " " if i < len(toks) - 1 else t for i, t in enumerate(toks)]
+        else:
+            return [head + v]
+        lines, cur = [], head
+        for t in toks:
+            if len((cur + t).expandtabs(8)) > width and cur.strip() not in ("", head.strip()):
+                lines.append(cur.rstrip())
+                cur = cont + (" " if v.startswith("<") else "")
+            cur += t
+        lines.append(cur)
+        return lines
+
     def node(self, n, path, ind, out, name=None):
         pad = "\t" * ind
         lbls = "".join("%s: " % l for l in self.labels.get(path, []))
@@ -103,7 +126,20 @@ class Emitter:
             if pn in ("phandle", "linux,phandle"):
                 continue
             v = self.value(path, pn, b)
-            out.append("%s\t%s;" % (pad, pn) if v is None else "%s\t%s = %s;" % (pad, pn, v))
+            if v is None:
+                out.append("%s\t%s;" % (pad, pn))
+            else:
+                if pn.endswith("routing") and v.startswith('"'):
+                    # one sink/source pair per line
+                    toks = re.findall(r'"(?:[^"\\]|\\.)*"', v)
+                    head = "%s\t%s = " % (pad, pn)
+                    cont = pad + "\t" + " " * (len(pn) + 3)
+                    pairs = [", ".join(toks[i:i + 2]) for i in range(0, len(toks), 2)]
+                    for i, pr in enumerate(pairs):
+                        out.append((head if i == 0 else cont) + pr +
+                                   (";" if i == len(pairs) - 1 else ","))
+                else:
+                    out.extend(self.wrap("%s\t%s = " % (pad, pn), v + ";"))
         for cn, c in n.children.items():
             if n.props:
                 out.append("")
@@ -130,11 +166,20 @@ def main():
     ap.add_argument("blob")
     ap.add_argument("--fragments", required=True, help="indices, e.g. 36-45,90")
     ap.add_argument("-o", "--output", default="-")
+    ap.add_argument("--header", help="comment text for the file header (\\n separates lines)")
     a = ap.parse_args()
     t = dc.load(a.blob, sidecar=False)
     frs = t.fragments()
     e = Emitter(t)
     text = "\n".join(e.fragment(frs[i]) for i in parse_ranges(a.fragments, len(frs)))
+    if a.header:
+        hdr = ["/*"]
+        hdr += [(" * " + l).rstrip() for l in a.header.split("\\n")]
+        hdr += [" *", " * Reconstructed from stock dtbo.img (%s, fragments %s) with" % (
+            os.path.basename(a.blob), a.fragments),
+            " * scripts/amethyst-dtbo-to-dts.py; labels and references are the stock",
+            " * ones from __symbols__, __fixups__ and __local_fixups__.", " */", ""]
+        text = "\n".join(hdr) + "\n" + text
     if a.output == "-":
         sys.stdout.write(text)
     else:
