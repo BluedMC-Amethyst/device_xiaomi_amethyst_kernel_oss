@@ -7,9 +7,10 @@
 #   1. copies this kernel checkout to kernel/xiaomi/amethyst. It must be a
 #      real directory: Kbuild resolves the relative M= paths that Lineage's
 #      kernel.mk uses against the kernel's physical location;
-#   2. installs clang r487747c (the compiler this 6.1.68 tree and Xiaomi's
-#      modules were built with; newer clangs reject core files) under
-#      prebuilts/clang/kernel/linux-x86;
+#   2. installs clang r487747c (the compiler build.config.constants declares
+#      for this FP6 6.1.182 tree, and the functional baseline) under
+#      prebuilts/clang/kernel/linux-x86. clang 20 (clang-r547379) ships with
+#      LineageOS in prebuilts/clang/host/linux-x86 and needs no install;
 #   3. links this tree's amethyst-only modules into the module root;
 #   4. applies scripts/amethyst-patches/los/<project path>/*.patch;
 #   5. installs the vendor UAPI headers in scripts/amethyst-vendor-uapi.txt
