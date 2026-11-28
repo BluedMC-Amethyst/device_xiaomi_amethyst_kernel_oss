@@ -484,14 +484,31 @@ def create_adjacency(dtbs):
 def parse_tech_dt_files(folder):
 	dtbs = []
 	for root, dirs, files in os.walk(folder):
-		for filename in files:
+		# amethyst: walk in sorted order so the merge order is reproducible
+		dirs.sort()
+		for filename in sorted(files):
 			if os.path.splitext(filename)[1] in ['.dtbo','.dtb']:
 				filepath = os.path.join(root, filename)
 				dt = DeviceTree(filepath)
 				dtbs.append((dt.list_props('/__symbols__'), dt.list_props('/__fixups__'), filepath))
 	graph = create_adjacency(dtbs)
-	ts = graphlib.TopologicalSorter(graph)
-	order = list(ts.static_order())
+	# amethyst: stable topological order. graphlib's static_order() emits
+	# whole "ready" waves, which pulls techpacks with no techpack
+	# dependency (e.g. WLAN) ahead of ones that depend on another techpack
+	# (board audio/camera/display). Stock was merged in plain walk order;
+	# pick the earliest-walked ready techpack at every step instead, which
+	# keeps walk order wherever dependencies allow.
+	walk = [filepath for _, _, filepath in dtbs]
+	pending = {dt: set(d for d in deps if d) for dt, deps in graph.items()}
+	order = []
+	while pending:
+		ready = [dt for dt in walk if dt in pending and not pending[dt]]
+		if not ready:
+			raise graphlib.CycleError("techpack symbol cycle", list(pending))
+		order.append(ready[0])
+		del pending[ready[0]]
+		for deps in pending.values():
+			deps.discard(ready[0])
 	devicetrees = []
 	for dt in order:
 		if dt: # Check the value is 'None'
@@ -501,7 +518,8 @@ def parse_tech_dt_files(folder):
 def parse_dt_files(dt_folder):
 	devicetrees = []
 	for root, dirs, files in os.walk(dt_folder):
-		for filename in files:
+		dirs.sort()
+		for filename in sorted(files):
 			if os.path.splitext(filename)[1] not in ['.dtb', '.dtbo']:
 				continue
 			filepath = os.path.join(root, filename)

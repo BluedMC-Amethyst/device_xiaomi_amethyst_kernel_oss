@@ -1037,6 +1037,8 @@ def cmd_parity(a):
         ts, tr = load(sb), load(rb)
         d = Diff(explain)
         diff_trees(ts, tr, d, oracle, prefix="base ")
+        if open(sb, "rb").read() != open(rb, "rb").read():
+            d.add("base %s raw-bytes differ" % os.path.basename(sb))
         n = emit(d, out, "base %s vs %s" % (sb, rb))
         summary.append(("base " + os.path.basename(sb), len(d.lines), n))
         total_unexpl += n
@@ -1053,6 +1055,17 @@ def cmd_parity(a):
             for k in ("id", "rev", "custom"):
                 if es[k] != er[k]:
                     d.add("table entry%d ~%s %s -> %s" % (i, k, es[k], er[k]))
+            # packaging: entry layout and raw bytes (not semantic, but must be explained)
+            for k in ("dt_offset", "dt_size"):
+                if es[k] != er[k]:
+                    d.add("table entry%d ~%s %s -> %s" % (i, k, es[k], er[k]))
+            sb = open(simg, "rb").read()[es["dt_offset"]:es["dt_offset"] + es["dt_size"]]
+            rb_ = open(rimg, "rb").read()[er["dt_offset"]:er["dt_offset"] + er["dt_size"]]
+            if sb != rb_:
+                d.add("table entry%d raw-bytes differ" % i)
+        for k in ("total_size", "file_size"):
+            if st[k] != rt[k]:
+                d.add("table ~%s %s -> %s" % (k, st[k], rt[k]))
         n = emit(d, out, "dtbo table %s vs %s" % (simg, rimg))
         summary.append(("dtbo table", len(d.lines), n))
         total_unexpl += n
@@ -1069,6 +1082,7 @@ def cmd_parity(a):
                 if bid not in msm_s and not a.all_bases:
                     continue
                 d = Diff(explain)
+                es = er = None
                 try:
                     es = apply_overlay(ts, so)
                     er = apply_overlay(tr, ro)
@@ -1079,6 +1093,34 @@ def cmd_parity(a):
                 n = emit(d, out, "effective: %s + entry %d vs rebuilt" % (os.path.basename(sb), i))
                 summary.append(("effective %s+entry%d" % (os.path.basename(sb), i), len(d.lines), n))
                 total_unexpl += n
+                if a.ufdt:
+                    # Same comparison with the trees libufdt (ABL) produces.
+                    import subprocess
+                    import tempfile
+                    d = Diff(explain)
+                    with tempfile.TemporaryDirectory() as td:
+                        outs = []
+                        for tag, base_f, img in (("s", sb, simg), ("r", rb, rimg)):
+                            ov = os.path.join(td, tag + ".dtbo")
+                            tb = parse_dtbo_table(open(img, "rb").read())["entries"][i]
+                            with open(ov, "wb") as f:
+                                f.write(open(img, "rb").read()[tb["dt_offset"]:tb["dt_offset"] + tb["dt_size"]])
+                            o = os.path.join(td, tag + ".dtb")
+                            r_ = subprocess.run([a.ufdt, base_f, ov, o], stdout=subprocess.DEVNULL,
+                                                stderr=subprocess.PIPE)
+                            if r_.returncode:
+                                d.add("ufdt%d/%s apply-failed (%s)" % (i, tag, r_.stderr.decode()[:200]))
+                            outs.append(o)
+                        if not d.lines:
+                            us, ur = load(outs[0], sidecar=False), load(outs[1], sidecar=False)
+                            orc = dict(oracle)
+                            for t_ in (es, er):
+                                for k, v in (t_.phrefs.items() if t_ else ()):
+                                    orc.setdefault(k, set(v))
+                            diff_trees(us, ur, d, orc, prefix="ufdt%d/%s " % (i, os.path.basename(sb)))
+                    n = emit(d, out, "effective (ufdt_apply_overlay): %s + entry %d" % (os.path.basename(sb), i))
+                    summary.append(("ufdt %s+entry%d" % (os.path.basename(sb), i), len(d.lines), n))
+                    total_unexpl += n
     out.write("\n== SUMMARY\n")
     for name, tot, n in summary:
         out.write("   %-40s differences=%-5d unexplained=%d\n" % (name, tot, n))
@@ -1112,6 +1154,7 @@ def main():
     p.add_argument("--explain"); p.add_argument("--report")
     p.add_argument("--chains", help="merge-chains.json from amethyst-dt-build.py")
     p.add_argument("--all-bases", action="store_true", help="apply every entry to every base")
+    p.add_argument("--ufdt", help="ufdt_apply_overlay binary: also compare trees as libufdt (ABL) builds them")
     p.set_defaults(fn=cmd_parity)
     a = ap.parse_args()
     sys.exit(a.fn(a) or 0)
