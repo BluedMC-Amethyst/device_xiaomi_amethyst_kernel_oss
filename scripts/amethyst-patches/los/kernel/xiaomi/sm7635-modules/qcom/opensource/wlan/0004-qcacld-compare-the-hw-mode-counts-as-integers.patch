@@ -1,0 +1,21 @@
+Subject: [PATCH] qcacld: compare the hw mode counts as integers
+
+wma_update_mlme_aux_dev_caps() checks that the WMI and MLME hw mode
+enums have the same number of entries by comparing their MAX values,
+which belong to different enum types. clang 20 rejects that
+(-Wenum-compare, -Werror). Compare them as int32_t, as newer
+qcacld-3.0 (FP6 modules, lineage-23.2) does; the check is unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+--- a/qcacld-3.0/core/wma/src/wma_main.c
++++ b/qcacld-3.0/core/wma/src/wma_main.c
+@@ -6294,7 +6294,7 @@
+ 	struct wlan_mlme_aux_dev_caps
+ 		wlan_mlme_aux0_dev_caps[WLAN_MLME_HW_MODE_MAX] = {0};
+
+-	if (WMI_HOST_HW_MODE_MAX != WLAN_MLME_HW_MODE_MAX)
++	if ((int32_t)WMI_HOST_HW_MODE_MAX != (int32_t)WLAN_MLME_HW_MODE_MAX)
+ 		wma_err("struct define mismatch, pls fix it.");
+
+ 	num_aux_dev_caps =
