@@ -21,7 +21,7 @@
 #include <linux/sched.h>
 
 
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
+/* MIN() and MAX() come from <linux/minmax.h> since 6.1.182. */
 
 
 int write_rb(const char *data, int32_t size);

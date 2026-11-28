@@ -113,7 +113,7 @@
 #define ABS(val)			(((val) < 0)? -(val) : val)
 #define MAX_ABS(a, b)			((ABS(a) > ABS(b))? a : b)
 #define MIN_ABS(a, b)			((ABS(a) > ABS(b))? b : a)
-#define MAX(a, b) ((a > b) ? a : b)
+/* MIN() and MAX() come from <linux/minmax.h> since 6.1.182. */
 
 //for diffshift
 static char g_limit_file_name[100];
