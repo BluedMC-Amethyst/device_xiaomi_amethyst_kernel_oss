@@ -960,4 +960,7 @@ config STMVL53L1
          To compile this driver as a module, choose M here: the
          module will be called stmvl53l3.
 
+source "drivers/input/misc/aw86927_haptic/Kconfig"
+source "drivers/input/misc/si_haptic/Kconfig"
+source "drivers/input/misc/aac_haptic/Kconfig"
 endif

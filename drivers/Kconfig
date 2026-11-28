@@ -243,4 +243,8 @@ source "drivers/hte/Kconfig"
 
 source "drivers/emkit/Kconfig"
 
+source "drivers/xiaomi/Kconfig"
+
+source "drivers/hyperenhance/Kconfig"
+
 endmenu

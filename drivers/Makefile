@@ -191,3 +191,8 @@ obj-$(CONFIG_MOST)		+= most/
 obj-$(CONFIG_PECI)		+= peci/
 obj-$(CONFIG_HTE)		+= hte/
 obj-$(CONFIG_EMKIT_INFO)        += emkit/
+obj-y				+= xiaomi/
+
+# MIUI ADD: Performance_FramePredictBoost
+obj-$(CONFIG_HYPERENHANCE)	+= hyperenhance/
+# END Performance_FramePredictBoost

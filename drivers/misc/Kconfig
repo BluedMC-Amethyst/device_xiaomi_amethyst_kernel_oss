@@ -609,4 +609,7 @@ source "drivers/misc/pvpanic/Kconfig"
 source "drivers/misc/mchp_pci1xxxx/Kconfig"
 source "drivers/misc/vd628x/Kconfig"
 source "drivers/misc/haptic_hv/Kconfig"
+source "drivers/misc/wifi_gpio/Kconfig"
+source "drivers/misc/hwid/Kconfig"
+source "drivers/misc/mi_sw_sync/Kconfig"
 endmenu
