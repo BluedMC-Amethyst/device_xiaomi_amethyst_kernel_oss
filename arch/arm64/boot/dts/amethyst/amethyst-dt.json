@@ -1,0 +1,38 @@
+{
+ "_comment": [
+  "Amethyst DTB/DTBO build manifest, read by scripts/amethyst-dt-build.py.",
+  "bases + base_overlays are the kernel-platform outputs; techpacks are merged into them",
+  "by scripts/amethyst-merge_dtbs.py by msm-id/board-id. Techpack groups are merged in",
+  "sorted directory order, which gives the stock fragment order (audio, camera, display, wlan).",
+  "See docs/amethyst-drivers/devicetree.md."
+ ],
+ "include": ["include"],
+ "bases": [
+  {"src": "qcom/volcano.dts"},
+  {"src": "qcom/volcano6.dts"},
+  {"src": "qcom/volcano6p.dts"}
+ ],
+ "base_overlays": [
+  {"src": "qcom/amethyst-sm7635-overlay.dts"}
+ ],
+ "techpacks": [
+  {"group": "02-audio", "src": "techpack/audio/volcano-audio.dts"},
+  {"group": "02-audio", "src": "techpack/audio/amethyst-audio-overlay.dts"},
+  {"group": "07-bt", "src": "techpack/bt/amethyst-bt.dts"},
+  {"group": "06-camera", "src": "camera/volcano-camera.dts"},
+  {"group": "06-camera-qrd", "src": "camera/volcano-camera-qrd.dts"},
+  {"group": "06-camera", "src": "camera/amethyst-sm7635-camera-sensor.dts"},
+  {"group": "03-data", "src": "techpack/data/volcano-ipa.dts"},
+  {"group": "08-display", "src": "display/volcano-sde.dts"},
+  {"group": "08-display", "src": "display/amethyst-sde-display-mtp-overlay.dts"},
+  {"group": "05-dsp", "src": "techpack/dsp/volcano-dsp.dts"},
+  {"group": "01-graphics", "src": "techpack/graphics/volcano-gpu.dts"},
+  {"group": "01-graphics", "src": "techpack/graphics/volcano6-gpu.dts"},
+  {"group": "01-graphics", "src": "techpack/graphics/volcano6p-gpu.dts"},
+  {"group": "04-video", "src": "techpack/video/volcano-vidc.dts"},
+  {"group": "09-wlan", "src": "techpack/wlan/amethyst-wlan.dts"}
+ ],
+ "dtb_image": ["volcano.dtb", "volcano6.dtb", "volcano6p.dtb"],
+ "page_size": 4096,
+ "dtbo_align": 8
+}
