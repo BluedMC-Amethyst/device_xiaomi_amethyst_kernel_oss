@@ -156,6 +156,7 @@
 	qcom,max-current-ma = <430>;
 	xiaomi,currents-with-time = <430 430>;
 	xiaomi,time-for-currents = <5000 0xFFFFFFFF>;  /* 0xFFFFFFFF means flash always on*/
+	qcom,ires-ua = <5000>;
 };
 
 &pmxr2230_switch0 {
