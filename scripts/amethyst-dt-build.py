@@ -16,7 +16,7 @@ images:
      --dtb), and pack every merged .dtbo, sorted by name, into dtbo.img.
 
 The source set is described by a JSON manifest (see
-arch/arm64/boot/dts/vendor/amethyst/amethyst-dt.json).
+arch/arm64/boot/dts/amethyst/amethyst-dt.json).
 
 Host tools needed in --tools (or PATH): dtc, fdtoverlay, fdtoverlaymerge,
 fdtget, fdtput and ufdt_apply_overlay. The dtc must be the CAF/AOSP one that
@@ -70,9 +70,6 @@ def compile_one(ent, root, out_dir, args, env, kind):
     e2["DTC_PHREF_OUT"] = out + ".phrefs"
     run([args.dtc, "-q", "-@", "-b", "0", "-I", "dts", "-O", "dtb"] +
         sum((["-i", i] for i in incs), []) + DTC_WARN + ["-o", out, pp], e2)
-    if os.path.exists(out + ".phrefs") and os.path.getsize(out + ".phrefs") == 0 and \
-            not args.keep_phrefs:
-        pass
     return out
 
 
@@ -106,7 +103,6 @@ def main():
                     help="C preprocessor driver (clang or cpp)")
     ap.add_argument("--merge-script", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                            "amethyst-merge_dtbs.py"))
-    ap.add_argument("--keep-phrefs", action="store_true")
     args = ap.parse_args()
 
     args.manifest = os.path.abspath(args.manifest)
