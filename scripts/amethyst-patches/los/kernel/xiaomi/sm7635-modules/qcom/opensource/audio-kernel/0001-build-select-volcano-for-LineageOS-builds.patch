@@ -1,0 +1,17 @@
+diff --git a/Makefile b/Makefile
+index a26a0e1..fa551a5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -14,6 +14,12 @@ M=$(PWD)
+ AUDIO_ROOT=$(KERNEL_SRC)/$(M)
+ 
+ KBUILD_OPTIONS+=  AUDIO_ROOT=$(AUDIO_ROOT)
++# LineageOS out-of-tree build (vendor/lineage/build/tasks/kernel.mk) for
++# amethyst (SM7635/volcano): select the platform config and link against
++# msm_ext_display (hdmi_dlkm).
++KBUILD_OPTIONS += MODNAME=audio_dlkm
++KBUILD_OPTIONS += BOARD_PLATFORM=volcano
++KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS=$(OUT_DIR)/../sm7635-modules/qcom/opensource/mm-drivers/msm_ext_display/Module.symvers
+ 
+ all: modules
+ 

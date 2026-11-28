@@ -1,0 +1,2 @@
+# The kernel ignores *.patch; these are sources applied by amethyst-los-setup.sh.
+!*.patch

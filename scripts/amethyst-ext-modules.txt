@@ -1,0 +1,43 @@
+# External kernel modules for amethyst, relative to TARGET_KERNEL_EXT_MODULE_ROOT
+# (kernel/xiaomi/sm7635-modules). Keep in sync with TARGET_KERNEL_EXT_MODULES
+# in device/xiaomi/amethyst/BoardConfig.mk.
+# Order matters: modules that export symbols come before their users.
+
+# Providers
+qcom/opensource/datarmnet-ext/mem
+qcom/opensource/dataipa/drivers/platform/msm
+qcom/opensource/datarmnet/core
+qcom/opensource/datarmnet-ext/shs
+qcom/opensource/dsp-kernel
+qcom/opensource/mm-drivers/hw_fence
+qcom/opensource/mm-drivers/msm_ext_display
+qcom/opensource/mm-drivers/sync_fence
+qcom/opensource/mmrm-driver
+qcom/opensource/securemsm-kernel
+qcom/opensource/synx-kernel
+qcom/opensource/wlan/platform
+xiaomi/miev
+xiaomi/swinfo
+
+# Users
+qcom/opensource/audio-kernel
+xiaomi/aw882xx
+qcom/opensource/bt-kernel
+qcom/opensource/camera-kernel
+qcom/opensource/datarmnet-ext/aps
+qcom/opensource/datarmnet-ext/offload
+qcom/opensource/datarmnet-ext/perf
+qcom/opensource/datarmnet-ext/perf_tether
+qcom/opensource/datarmnet-ext/sch
+qcom/opensource/datarmnet-ext/wlan
+qcom/opensource/display-drivers/msm
+qcom/opensource/eva-kernel
+qcom/opensource/graphics-kernel
+qcom/opensource/mm-sys-kernel/ubwcp
+qcom/opensource/spu-kernel
+qcom/opensource/video-driver
+qcom/opensource/wlan/qcacld-3.0/.qca6750
+xiaomi/st-ese
+xiaomi/st-nfc
+xiaomi/focaltech_touch
+xiaomi/mi_thermal_interface

@@ -1,0 +1,37 @@
+From: Allan Zhang <bluekyeet@bluedmc.xyz>
+Subject: [PATCH] msm_stub: accept 96 kHz and up to 8 channels like amethyst stock
+
+The amethyst speaker graph opens the TDM-LPAIF_WSA RX/TX backends
+(msm-stub-rx-46, msm-stub-tx-47) at 96 kHz with 3 and 2 channels. The
+flourite release limits the stub DAIs to 8-48 kHz, so hw_params fails
+with -EINVAL and the speaker is silent ([TF-NOSOUND]). Stock amethyst
+stub_dlkm advertises SNDRV_PCM_RATE_8000_96000 (0x7fe) and 1-8 channels.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/asoc/codecs/msm_stub.c b/asoc/codecs/msm_stub.c
+index 37c0352..cb1e211 100644
+--- a/asoc/codecs/msm_stub.c
++++ b/asoc/codecs/msm_stub.c
+@@ -19,8 +19,8 @@ static struct snd_soc_dai_driver msm_stub_dais[] = {
+ 		.playback = { /* Support maximum range */
+ 			.stream_name = "Playback",
+ 			.channels_min = 1,
+-			.channels_max = 32,
+-			.rates = SNDRV_PCM_RATE_8000_48000,
++			.channels_max = 8,
++			.rates = SNDRV_PCM_RATE_8000_96000,
+ 			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+ 				    SNDRV_PCM_FMTBIT_S24_LE |
+ 				    SNDRV_PCM_FMTBIT_S24_3LE |
+@@ -32,8 +32,8 @@ static struct snd_soc_dai_driver msm_stub_dais[] = {
+ 		.capture = { /* Support maximum range */
+ 			.stream_name = "Record",
+ 			.channels_min = 1,
+-			.channels_max = 32,
+-			.rates = SNDRV_PCM_RATE_8000_48000,
++			.channels_max = 8,
++			.rates = SNDRV_PCM_RATE_8000_96000,
+ 			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+ 				    SNDRV_PCM_FMTBIT_S24_LE |
+ 				    SNDRV_PCM_FMTBIT_S24_3LE |

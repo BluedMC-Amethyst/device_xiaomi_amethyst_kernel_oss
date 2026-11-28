@@ -1,0 +1,20 @@
+diff --git a/msm/Makefile b/msm/Makefile
+index edaa73f..fddfa25 100644
+--- a/msm/Makefile
++++ b/msm/Makefile
+@@ -1,6 +1,15 @@
+ # SPDX-License-Identifier: GPL-2.0
+ 
+ KBUILD_OPTIONS+= DISPLAY_ROOT=$(KERNEL_SRC)/$(M)/../
++# LineageOS kernel.mk does not pass the providers' Module.symvers (FP6's
++# list plus hw_fence and mmrm, which MiCode's display driver uses). Passed on the command line so
++# modpost sees it; it reads Kbuild, not this Makefile.
++KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS="\
++    $(OUT_DIR)/../sm7635-modules/qcom/opensource/mm-drivers/msm_ext_display/Module.symvers \
++    $(OUT_DIR)/../sm7635-modules/qcom/opensource/mm-drivers/sync_fence/Module.symvers \
++    $(OUT_DIR)/../sm7635-modules/qcom/opensource/securemsm-kernel/Module.symvers \
++    $(OUT_DIR)/../sm7635-modules/qcom/opensource/mm-drivers/hw_fence/Module.symvers \
++    $(OUT_DIR)/../sm7635-modules/qcom/opensource/mmrm-driver/Module.symvers"
+ 
+ all: modules
+ 
