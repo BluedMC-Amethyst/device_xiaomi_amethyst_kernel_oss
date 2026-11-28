@@ -30,7 +30,6 @@ display/media/msm_sde_rotator.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dis
 linux/avtimer.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/avtimer.h
 linux/dn.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/dn.h
 linux/ipa_qmi_service_v01.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/ipa_qmi_service_v01.h
-linux/mhi.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/mhi.h
 linux/msm_audio.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio.h
 linux/msm_audio_aac.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_aac.h
 linux/msm_audio_ac3.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/msm_audio_ac3.h
@@ -54,14 +53,12 @@ linux/msm_ipa.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/pla
 linux/netfilter_decnet.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/netfilter_decnet.h
 linux/nfc/nfcinfo.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/nfc/nfcinfo.h
 linux/nfsd/nfsfh.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/nfsd/nfsfh.h
-linux/power_state.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/power_state.h
 linux/qbt_handler.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/qbt_handler.h
 linux/qseecom.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/include/uapi/linux/qseecom.h
 linux/qseecom_api.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/include/uapi/linux/qseecom_api.h
 linux/qti-smmu-proxy.h	kernel/xiaomi/sm7635-modules/qcom/opensource/securemsm-kernel/smmu-proxy/include/uapi/linux/qti-smmu-proxy.h
 linux/rmnet_data.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/rmnet_data.h
 linux/rmnet_ipa_fd_ioctl.h	kernel/xiaomi/sm7635-modules/qcom/opensource/dataipa/drivers/platform/msm/include/uapi/linux/rmnet_ipa_fd_ioctl.h
-linux/slatecom_interface.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/slatecom_interface.h
 linux/ubwcp_ioctl.h	kernel/xiaomi/sm7635-modules/qcom/opensource/mm-sys-kernel/ubwcp/include/uapi/ubwcp_ioctl.h
 linux/wcd-spi-ac-params.h	device/xiaomi/amethyst-kernel/kernel-headers/linux/wcd-spi-ac-params.h
 sound/audio_compressed_formats.h	device/xiaomi/amethyst-kernel/kernel-headers/sound/audio_compressed_formats.h
