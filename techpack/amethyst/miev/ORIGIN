@@ -1,0 +1,23 @@
+Source: https://github.com/MiCode/MTK_kernel_device_modules branch dash-w-oss
+  commit 9c6256406e2afb9c316fe3be05a66c1eaa88d900 (branch tip, fetched 2026-11-27)
+  drivers/misc/xiaomi/miev/{common.h,midevice.c,midevice.h,mievent.c,mievent.h}
+  include/miev/mievent.h -> include/miev/mievent.h
+Licence: GPL (MODULE_LICENSE("GPL"), part of Xiaomi's GPL kernel source release).
+Author: huangqibo <huangqibo@xiaomi.com> (Xiaomi), feature "MiSight_LogEnhance".
+
+Match with stock amethyst miev.ko (OS3.0.306.0, vendor_boot):
+  same module name, author and description; the same five exports
+  (cdev_tevent_alloc/add_int/add_str/write/destroy); the same function set
+  (write_buf_inner, check_work, do_miev_work, miev_get_work_msg,
+  miev_release_work_msg, write_kbuf, miev_{open,release,read,write,poll,ioctl})
+  and the same log strings. The driver has no SoC-specific code, so the
+  MediaTek-tree copy is the driver the Qualcomm build uses.
+  The older MiCode copy (Xiaomi_Kernel_OpenSource socrates-t-oss,
+  drivers/staging/miev) uses a linked-list payload layout and was not used.
+
+Changes: one line in midevice.c (see below); none to the headers. Kbuild and Makefile replace the
+release's Kconfig/Makefile. Kbuild defines CONFIG_MIEV_MODULE=1 so that
+include/miev/mievent.h exposes the real prototypes.
+
+midevice.c returns -ENOMEM when a work buffer allocation fails; upstream
+returned 0 after freeing everything.

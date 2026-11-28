@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Xiaomi MiSight exception-event transport (/dev/miev) for amethyst.
+# Source: MiCode MTK_kernel_device_modules dash-w-oss, unchanged; see ORIGIN.
+# include/miev/mievent.h is the full header from the same release. Defining
+# CONFIG_MIEV_MODULE selects its real prototypes (this module is the provider).
+# It must shadow the kernel's include/miev/mievent.h stub. mievent.h includes
+# it as "miev/mievent.h", and -iquote directories are searched for quoted
+# includes before the kernel's -I directories.
+ccflags-y += -iquote $(srctree)/$(src)/include
+ccflags-y += -DCONFIG_MIEV_MODULE=1
+obj-m += miev.o
+miev-y := midevice.o mievent.o

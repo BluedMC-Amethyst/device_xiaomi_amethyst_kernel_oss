@@ -1,0 +1,28 @@
+Source: https://github.com/MiCode/vendor_xiaomi_proprietary_touch-driver
+Branch: popsicle-w-oss
+Commit: c286ab85f4982c9b5967e18405f4e2da0332ce4d
+Path:   q200/focaltech_3383/
+License: GPL-2.0 (file headers "GNU General Public License version 2";
+         MODULE_LICENSE("GPL v2")). The repository carries no top-level
+         LICENSE file; the per-file headers are authoritative.
+
+Imported verbatim (first commit): focaltech_core.[ch], focaltech_common.h,
+focaltech_config.h, focaltech_ex_fun.c, focaltech_ex_mode.c,
+focaltech_gesture.c, focaltech_esdcheck.c, focaltech_point_report_check.c,
+focaltech_spi.c, focaltech_flash.h, focaltech_test/focaltech_test.h,
+focaltech_test/focaltech_test_ini.h.
+
+Deliberately NOT imported:
+  focaltech_flash.c, focaltech_flash/focaltech_upgrade_ft3383.c,
+  include/pramboot/*.i, include/firmware/*.i
+      Firmware/flash upgrade. Flash writing is disabled on amethyst; see
+      focaltech_flash_ro.c, which replaces the subset of the API the rest of
+      the driver calls and never writes the controller's flash.
+  focaltech_test/focaltech_test.c, focaltech_test_ini.c,
+  supported_ic/focaltech_test_ft3383.c
+      Factory self-test for the FT3383 (donor IC). The amethyst controller is
+      an FT3683G (stock uses the FT5672-family test), so the donor test would
+      drive the wrong IC. Self-test is reported as unsupported instead.
+
+Amethyst changes are in the following commits and documented in
+docs/amethyst-drivers/focaltech.md.
