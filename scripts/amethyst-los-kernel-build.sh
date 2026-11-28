@@ -6,14 +6,24 @@
 # Usage: amethyst-los-kernel-build.sh <LineageOS tree> [stage...]
 #   stages: config kernel modules ext (all external modules)
 #           ext=<module> (only that one) ext@<module> (from that one on)
+#           install (modules_install of the kernel and every external
+#             module into $OUT/staging, stripped and signed like kernel.mk)
+#           preflight (split $OUT/staging by the device's module lists into
+#             $OUT/preflight and run scripts/amethyst-preflight-modules.py)
 #           (default: config kernel modules ext)
 # Output: $OUT (default <LineageOS>/out-amethyst-kernel)/KERNEL_OBJ, with
 # external module objects in $OUT/sm7635-modules, as in a ROM build.
+# Environment:
+#   AMETHYST_KERNEL_CLANG  clang directory (default: the kernel's declared
+#                          r487747c under prebuilts/clang/kernel/linux-x86)
+#   AMETHYST_DEVICE_DIR    device tree whose modules/modules.list.* the
+#                          preflight stage uses (default:
+#                          <LineageOS>/device/xiaomi/amethyst)
 # Run scripts/amethyst-los-setup.sh first.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-    sed -n '3,10p' "$0" >&2
+    sed -n '3,22p' "$0" >&2
     exit 2
 fi
 los=$(realpath "$1")
@@ -26,7 +36,7 @@ ext_root=kernel/xiaomi/sm7635-modules
 list=$los/$kernel_src/scripts/amethyst-ext-modules.txt
 out=${OUT:-$los/out-amethyst-kernel}
 kout=$out/KERNEL_OBJ
-clang=$los/prebuilts/clang/kernel/linux-x86/clang-r487747c
+clang=${AMETHYST_KERNEL_CLANG:-$los/prebuilts/clang/kernel/linux-x86/clang-r487747c}
 tools=$los/prebuilts/kernel-build-tools/linux-x86
 bt=$los/prebuilts/build-tools/linux-x86
 sysroot=$los/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
@@ -43,6 +53,27 @@ flags=(
     PAHOLE="$tools/bin/pahole" DTC_FLAGS=-@
 )
 kmake() { "$bt/bin/make" "${flags[@]}" -C "$los/$kernel_src" O="$kout" "$@"; }
+
+# External module projects selected by a stage (see usage), in list order.
+ext_list() {
+    local stage=$1 i
+    mapfile -t mods < <(grep -Ev '^\s*(#|$)' "$list")
+    if [[ $stage == ext=* ]]; then
+        mods=("${stage#ext=}")
+    elif [[ $stage == ext@* ]]; then
+        for i in "${!mods[@]}"; do [[ ${mods[$i]} == "${stage#ext@}" ]] && break; done
+        mods=("${mods[@]:$i}")
+    fi
+}
+
+# Same invocation as kernel.mk's make-external-module-target.
+emake() {
+    local m=$1 rpath
+    shift
+    rpath=$(python3 -c 'import os,sys;print(os.path.relpath(*sys.argv[1:]))' "$ext_root" "$kernel_src")
+    "$bt/bin/make" "${flags[@]}" -C "$ext_root/$m" M="$rpath/$m" \
+        KERNEL_SRC="$los/$kernel_src" OUT_DIR="$kout" O="$kout" "$@"
+}
 
 configs=(gki_defconfig vendor/pineapple_GKI.config vendor/amethyst_GKI.config
          vendor/amethyst_standalone.config)
@@ -64,20 +95,37 @@ for stage in "${stages[@]}"; do
     kernel) kmake Image ;;
     modules) kmake modules ;;
     ext | ext=* | ext@*)
-        rpath=$(python3 -c 'import os,sys;print(os.path.relpath(*sys.argv[1:]))' "$ext_root" "$kernel_src")
-        mapfile -t mods < <(grep -Ev '^\s*(#|$)' "$list")
-        if [[ $stage == ext=* ]]; then
-            mods=("${stage#ext=}")
-        elif [[ $stage == ext@* ]]; then
-            for i in "${!mods[@]}"; do [[ ${mods[$i]} == "${stage#ext@}" ]] && break; done
-            mods=("${mods[@]:$i}")
-        fi
+        ext_list "$stage"
         for m in "${mods[@]}"; do
             printf '==> %s\n' "$m"
-            # Same invocation as kernel.mk's make-external-module-target.
-            "$bt/bin/make" "${flags[@]}" -C "$ext_root/$m" M="$rpath/$m" \
-                KERNEL_SRC="$los/$kernel_src" OUT_DIR="$kout" O="$kout"
+            emake "$m"
         done
+        ;;
+    install)
+        # kernel.mk: modules_install with INSTALL_MOD_STRIP=1 for the kernel,
+        # then for each external module. With MODULE_SIG_ALL this signs them.
+        rm -rf "$out/staging"
+        kmake INSTALL_MOD_PATH="$out/staging" INSTALL_MOD_STRIP=1 modules_install > /dev/null
+        ext_list ext
+        for m in "${mods[@]}"; do
+            emake "$m" INSTALL_MOD_PATH="$out/staging" INSTALL_MOD_STRIP=1 \
+                KERNEL_UAPI_HEADERS_DIR="$kout" modules_install > /dev/null
+        done
+        release=$(< "$kout/include/config/kernel.release")
+        dups=$(find "$out/staging/lib/modules/$release" -name '*.ko' -printf '%f\n' | sort | uniq -d)
+        if [[ -n $dups ]]; then
+            printf 'Duplicate module %s\n' $dups >&2
+            exit 1
+        fi
+        ;;
+    preflight)
+        release=$(< "$kout/include/config/kernel.release")
+        python3 "$los/$kernel_src/scripts/amethyst-preflight-stage.py" \
+            "$out/staging/lib/modules/$release" \
+            "${AMETHYST_DEVICE_DIR:-$los/device/xiaomi/amethyst}/modules" "$out/preflight"
+        python3 "$los/$kernel_src/scripts/amethyst-preflight-modules.py" "$out/preflight" "$kout" \
+            --vendor-boot-load "$out/preflight/vendor_boot/modules.load" \
+            --vendor-dlkm-load "$out/preflight/vendor_dlkm/modules.load"
         ;;
     *) printf 'Unknown stage %s\n' "$stage" >&2; exit 2 ;;
     esac
