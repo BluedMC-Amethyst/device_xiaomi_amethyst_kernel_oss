@@ -13,9 +13,13 @@
 #      LineageOS in prebuilts/clang/host/linux-x86 and needs no install;
 #   3. links this tree's amethyst-only modules into the module root;
 #   4. applies scripts/amethyst-patches/los/<project path>/*.patch;
-#   5. installs the vendor UAPI headers in scripts/amethyst-vendor-uapi.txt
-#      into the copy, for the qti_*_kernel_headers userspace libraries.
+#   5. checks that the vendor UAPI headers committed under include/uapi still
+#      match their sources (scripts/amethyst-vendor-uapi.txt).
 # Re-run it after changing this checkout.
+#
+# None of this is needed when building from BluedMC-Amethyst/local_manifest-amethyst
+# (branch seventeen-oss). That manifest syncs this kernel, clang and the
+# patched module and DT forks directly.
 set -euo pipefail
 
 if [[ $# != 1 ]]; then
@@ -35,11 +39,13 @@ rsync -a --delete --exclude=/.git --exclude=/out "$kernel/" "$los/kernel/xiaomi/
 # Record the source commit, since the copy has no .git for setlocalversion.
 printf -- '-g%s\n' "$(git -C "$kernel" describe --always --dirty 2> /dev/null || echo unknown)" \
     > "$los/kernel/xiaomi/amethyst/.scmversion"
-# Vendor UAPI headers for the qti_*_kernel_headers libraries (see the list).
+# Vendor UAPI headers for the qti_*_kernel_headers libraries are committed
+# under include/uapi. Warn if a source has changed since they were copied.
 while IFS=$'\t' read -r dest src; do
     [[ -z $dest || $dest == \#* ]] && continue
-    [[ -f $los/$src ]] || { printf 'Missing vendor UAPI source %s\n' "$src" >&2; exit 1; }
-    install -D -m 0644 "$los/$src" "$los/kernel/xiaomi/amethyst/include/uapi/$dest"
+    [[ -f $los/$src ]] || continue
+    cmp -s "$los/$src" "$kernel/include/uapi/$dest" ||
+        printf 'warning: include/uapi/%s differs from %s\n' "$dest" "$src" >&2
 done < "$kernel/scripts/amethyst-vendor-uapi.txt"
 
 # 2. Compiler.
