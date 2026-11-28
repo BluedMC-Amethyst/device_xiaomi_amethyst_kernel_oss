@@ -9,7 +9,7 @@
 #           (default: config kernel modules ext)
 # Output: $OUT (default <LineageOS>/out-amethyst-kernel)/KERNEL_OBJ, with
 # external module objects in $OUT/sm7635-modules, as in a ROM build.
-# Run scripts/amethyst-los-setup.sh first.
+# Sync the BluedMC-Amethyst local manifest first.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -21,7 +21,7 @@ shift
 stages=("$@")
 ((${#stages[@]})) || stages=(config kernel modules ext)
 
-kernel_src=kernel/xiaomi/amethyst
+kernel_src=kernel/xiaomi/sm7635
 ext_root=kernel/xiaomi/sm7635-modules
 list=$los/$kernel_src/scripts/amethyst-ext-modules.txt
 out=${OUT:-$los/out-amethyst-kernel}

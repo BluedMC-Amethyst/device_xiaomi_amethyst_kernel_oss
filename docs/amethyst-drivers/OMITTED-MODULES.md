@@ -19,9 +19,9 @@ Xiaomi's own trees, only `mm/launch_boost` (lb) has source in this kernel.
 
 | Module | Class | Donor | Recommendation |
 | --- | --- | --- | --- |
-| mi_thermal_interface | Xiaomi feature driver | MiCode ziyi-s-oss (+malachite-u-oss) | **reconstructed** (`techpack/amethyst/mi_thermal_interface`) |
-| miev | debug/logging | MiCode MTK dash-w-oss (exact) | **reconstructed** (`techpack/amethyst/miev`) |
-| swinfo | debug/logging | MiCode onyx-v-oss (exact) | **reconstructed** (`techpack/amethyst/swinfo`) |
+| mi_thermal_interface | Xiaomi feature driver | MiCode ziyi-s-oss (+malachite-u-oss) | **reconstructed** (`sm7635-modules/xiaomi/mi_thermal_interface`) |
+| miev | debug/logging | MiCode MTK dash-w-oss (exact) | **reconstructed** (`sm7635-modules/xiaomi/miev`) |
+| swinfo | debug/logging | MiCode onyx-v-oss (exact) | **reconstructed** (`sm7635-modules/xiaomi/swinfo`) |
 | mi_memory | factory diagnostic | MiCode MTK malachite-u-oss (MTK UFS/DRAM variant) | reconstruct later |
 | lb | Xiaomi feature driver | in-tree `mm/launch_boost` (older subset) | omit; it can be enabled later (it builds) |
 | metis | kernel integration module | MiCode ziyi-s-oss `drivers/mihw/metis` (5.10, far smaller) | omit-with-evidence |
@@ -145,7 +145,7 @@ The nodes that stock has and the donors lack are plain integer slots: the
 stock relocations show they call only snprintf and simple_strtol. The
 charger forwarding follows the in-tree consumer's contract. The result's
 function list, attribute list and modinfo match stock. See
-`techpack/amethyst/mi_thermal_interface/ORIGIN`.
+`sm7635-modules/xiaomi/mi_thermal_interface/ORIGIN`.
 
 **miev** (`first_stage`, `recovery`). This is the MiSight exception-event
 char device (`/dev/miev`, major 520, 64 KiB kfifo) with five exports
@@ -283,7 +283,7 @@ These need edits that are outside this workstream's remit.
 3. **Optional, miev for source-built users.** To get kernel MiSight events
    from the source-built drivers, replace the stub
    `include/miev/mievent.h` with the real one in
-   `techpack/amethyst/miev/include/miev/mievent.h` (struct layout plus
+   `sm7635-modules/xiaomi/miev/include/miev/mievent.h` (struct layout plus
    prototypes under `#if IS_ENABLED(CONFIG_MIEV)`). Change its `#else`
    branch to `static inline` (the release header defines non-static
    functions there), and add `config MIEV` (tristate). This makes about 20

@@ -2,7 +2,7 @@
 # the qti_*_kernel_headers libraries that qcom-caf HALs build against.
 # Xiaomi's Bazel uapi dist provided them on stock; this kernel does not carry
 # them. Each <source> (relative to the LineageOS tree) is committed as
-# include/uapi/<dest>; amethyst-los-setup.sh warns when a source has changed.
+# include/uapi/<dest>. Re-copy a header when its source changes.
 #
 # Prefer the module source that is actually built, so userspace and the
 # driver agree on the ABI. Legacy CAF headers that no built module carries
