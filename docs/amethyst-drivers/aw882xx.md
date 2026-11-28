@@ -262,7 +262,7 @@ the work handler.
 
 ### Source
 
-`techpack/amethyst/aw882xx/fs19xx/` is FourSemi's FS19xx driver,
+`sm7635-modules/xiaomi/aw882xx/fs19xx/` is FourSemi's FS19xx driver,
 FSM_CODE_VERSION v4.0.9.3, from Xiaomi's GPL release
 MiCode/MTK_kernel_device_modules, branch `dash-w-oss`, commit
 `9c6256406e2afb9c316fe3be05a66c1eaa88d900`,

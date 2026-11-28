@@ -200,7 +200,7 @@ the HAL's `xiaomi_touch_ioctl`, `find_touch_device` and
 
 ## FocalTech
 
-`techpack/amethyst/focaltech_touch` is unchanged. It already registers its
+`sm7635-modules/xiaomi/focaltech_touch` is unchanged. It already registers its
 device with `x_max - 1`. The ROM's `focaltech_touch.ko` passes the module
 preflight against the new `xiaomi_touch.ko`: no CRC or symbol errors, and
 `register_touch_panel` keeps CRC `0xaf080eab`. The exported log level was

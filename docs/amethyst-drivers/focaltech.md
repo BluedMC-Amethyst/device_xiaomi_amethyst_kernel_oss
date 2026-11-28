@@ -1,7 +1,7 @@
 # FocalTech touch (`focaltech_touch.ko`) on amethyst
 
 Status: **builds, untested**. Nobody has loaded this module on a device.
-Source: `techpack/amethyst/focaltech_touch/`. Provenance: `ORIGIN` in that
+Source: `sm7635-modules/xiaomi/focaltech_touch/`. Provenance: `ORIGIN` in that
 directory.
 
 ## 1. Stock module analysis
@@ -253,7 +253,7 @@ marked `amethyst:` in the source.
 - `fts_parse_dt` failure and workqueue-allocation failure are only logged.
 
 ## 4. Build status
-`modcheck.sh techpack/amethyst/focaltech_touch` builds clean: no warnings,
+`modcheck.sh sm7635-modules/xiaomi/focaltech_touch` builds clean: no warnings,
 and modpost resolves every symbol against `out-amethyst-kernel/KERNEL_OBJ`.
 
 The result `focaltech_touch.ko` has name `focaltech_touch`, depends on
@@ -273,8 +273,8 @@ Import difference against stock:
 
 1. **`scripts/amethyst-ext-modules.txt`**: add `xiaomi/focaltech_touch`
    under "Users". The same entry goes into `TARGET_KERNEL_EXT_MODULES` in
-   `device/xiaomi/amethyst/BoardConfig.mk`. `amethyst-los-setup.sh` already
-   symlinks every `techpack/amethyst/*` into `sm7635-modules/xiaomi/`.
+   `device/xiaomi/amethyst/BoardConfig.mk`. The modules repository already
+   carries it under `xiaomi/`.
 2. **vendor_dlkm load list**: place `focaltech_touch.ko` right after
    `goodix_core.ko`, as stock does (`xiaomi_touch`, `goodix_core`,
    `focaltech_touch`; all after `panel_event_notifier`). Do not put it in

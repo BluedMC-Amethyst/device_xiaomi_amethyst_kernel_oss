@@ -160,7 +160,7 @@ Compatibles bound by nothing in our build:
 
 ## Patches proposed for synced projects
 
-- `scripts/amethyst-patches/los/kernel/xiaomi/sm7635-modules/qcom/opensource/wlan/0002-qcacld-map-profile-strings-for-the-make-build.patch`
+- `sm7635-modules/qcom/opensource/wlan/0002-qcacld-map-profile-strings-for-the-make-build.patch`
   maps `CONFIG_WLAN_CTRL_NAME`, `CONFIG_MULTI_IF_NAME`,
   `CONFIG_ENABLE_CE4_COMP_DISABLE_HTT_HTC_MISC_LIST` and
   `CONFIG_WLAN_OPEN_SOURCE` to the variables that the qcacld Kbuild tests.

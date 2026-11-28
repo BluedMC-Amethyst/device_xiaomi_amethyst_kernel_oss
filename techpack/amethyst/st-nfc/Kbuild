@@ -1,9 +1,0 @@
-obj-m += stm_nfc_i2c.o
-
-ccflags-y := $(call cc-option,-Wno-misleading-indentation)
-stm_nfc_i2c-y :=  st21nfc.o
-
-# Xiaomi/QTI stock parity (amethyst): MPM wake on CLK_REQ, no clk_get()
-# voting, secure-zone state (always non-secure). See st21nfc_xiaomi.[ch].
-ccflags-y += -DST21NFC_XIAOMI_COMPAT
-stm_nfc_i2c-y += st21nfc_xiaomi.o

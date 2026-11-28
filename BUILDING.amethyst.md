@@ -78,31 +78,31 @@ fastboot boot amethyst-test-boot.img   # RAM only
   `/sys/fs/pstore/console-ramoops-0`: the DT reserves ramoops and
   `PANIC_TIMEOUT=-1` reboots at once.
 
-## LineageOS 24 build, all modules from source (2026-11-27)
+## LineageOS 24 build, all from source
 
-The kernel, the in-tree GKI/vendor modules and every external vendor module
-that has source are built by LineageOS's `kernel.mk`. Only the DTB and DTBO
-stay stock: the OSS device trees lack amethyst's amp, haptics and USB nodes.
+The kernel, the in-tree GKI/vendor modules, every external vendor module that
+has source, and the DTB/DTBO are built by LineageOS's `kernel.mk`. Each part
+is in its own repository, the same layout as LineageOS's kernel trees:
 
-1. Sync LineageOS (`lineage-24.0`) with the amethyst local manifests plus a
-   manifest that adds the module and DT sources (MiCode `flourite-v-oss`
-   audio-kernel, display-drivers, camera-kernel and wlan into
-   `kernel/xiaomi/sm7635-modules/qcom/opensource`; LineageOS FP6
-   `android_kernel_fairphone_sm7635-modules` (lineage-23.2) at
-   `kernel/xiaomi/amethyst-qcom-modules`, linked into the same root).
-2. `scripts/amethyst-los-setup.sh <los>`: copies this tree to
-   `kernel/xiaomi/amethyst`, installs clang r487747c, links
-   `techpack/amethyst/*` and applies `scripts/amethyst-patches/los`.
-3. Optional fast check without a ROM build:
+| Path | Repository |
+| --- | --- |
+| `kernel/xiaomi/sm7635` | this kernel, `android_kernel_xiaomi_sm7635` |
+| `kernel/xiaomi/sm7635-devicetrees` | `android_kernel_xiaomi_sm7635-devicetrees`: source DTB/DTBO, matched to stock (`arch/arm64/boot/dts/vendor` points here) |
+| `kernel/xiaomi/sm7635-modules` | `android_kernel_xiaomi_sm7635-modules`: LineageOS FP6's SM7635 modules, MiCode flourite-v-oss audio, display, camera and wlan, and the amethyst-only drivers under `xiaomi/` |
+
+1. Sync LineageOS (`lineage-24.0`) with BluedMC-Amethyst's local manifest.
+   `device/xiaomi/amethyst` builds from these when they are present and falls
+   back to the stock kernel otherwise.
+2. Optional fast check without a ROM build:
    `scripts/amethyst-los-kernel-build.sh <los>` (stages: config kernel modules
    ext, `ext=<m>`, `ext@<m>`).
-4. `device/xiaomi/amethyst`: `TARGET_KERNEL_SOURCE := kernel/xiaomi/amethyst`,
+3. `device/xiaomi/amethyst`: `TARGET_KERNEL_SOURCE := kernel/xiaomi/sm7635`,
    `TARGET_KERNEL_EXT_MODULES` from `scripts/amethyst-ext-modules.txt`, and
    module lists in `modules/` (the stock load order minus modules without
    source).
-5. `breakfast amethyst userdebug && m bacon`.
+4. `breakfast amethyst userdebug && m bacon`.
 
-Modules ported in `techpack/amethyst`:
+Modules ported in `sm7635-modules/xiaomi`:
 - `aw882xx`: Awinic smart PA, Motorola's open v1.11.01 driver with Xiaomi's
   smart-PA hooks (`check_smartpa_type`/`set_smartpa_type`/`set_smartpa_codec`)
   and the `spksw-gpio` switch. Built without DSP messaging: the speaker

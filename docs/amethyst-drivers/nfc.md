@@ -4,7 +4,7 @@ Status: **builds, untested** (nothing has been run on hardware).
 
 This document compares the stock Xiaomi modules for amethyst (Redmi Note 14
 Pro+ 5G, SM7635 "volcano", 6.1.68 GKI) with the source-built ones in
-`techpack/amethyst/st-nfc` and `techpack/amethyst/st-ese`. It then
+`sm7635-modules/xiaomi/st-nfc` and `sm7635-modules/xiaomi/st-ese`. It then
 describes what was changed to close the gap. The descriptions are
 behavioural specifications, written from strings, relocations, symbol
 tables and disassembly of the stock `.ko` files. No decompiled code is
